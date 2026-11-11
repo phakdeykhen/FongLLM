@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+out
+website/
+docs-minimind/.venv/
+dataset/*.jsonl
+dataset/.msc
+dataset/.mv
+dataset/._____temp/
