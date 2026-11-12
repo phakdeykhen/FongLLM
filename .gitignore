@@ -8,3 +8,10 @@ dataset/*.jsonl
 dataset/.msc
 dataset/.mv
 dataset/._____temp/
+
+# Large model weights (too big for GitHub; download separately)
+assistant/models/
+*.safetensors
+*.pth
+*.bak
+.env
