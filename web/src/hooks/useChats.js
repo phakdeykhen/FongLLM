@@ -10,6 +10,7 @@ export default function useChats({ settings, onMedia }) {
   const [currentId, setCurrentId] = useState(null)   // null = a fresh, unsaved chat
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  const [progress, setProgress] = useState(null)   // { kind: 'image' | 'video', value: 0-100 } while one is being made
   const abort = useRef(null)
 
   const chat = chats.find((c) => c.id === currentId)
@@ -39,6 +40,7 @@ export default function useChats({ settings, onMedia }) {
     }))
     setBusy(true)
     setStatus('')
+    setProgress(null)
     abort.current = new AbortController()
     let gotMedia = false
     try {
@@ -49,15 +51,17 @@ export default function useChats({ settings, onMedia }) {
       }, (ev) => {
         if (ev.type === 'text') patchLast(id, (m) => ({ ...m, content: m.content + ev.delta }))
         else if (ev.type === 'status') setStatus(ev.text)
+        else if (ev.type === 'progress') setProgress({ kind: ev.kind, value: ev.value })
         else if (ev.type === 'sources') patchLast(id, (m) => ({ ...m, sources: ev.items }))
-        else if (ev.type === 'media') { gotMedia = true; patchLast(id, (m) => ({ ...m, media: [...(m.media || []), ev.item] })) }
-        else if (ev.type === 'error') patchLast(id, (m) => ({ ...m, error: ev.text }))
+        else if (ev.type === 'media') { gotMedia = true; setProgress(null); patchLast(id, (m) => ({ ...m, media: [...(m.media || []), ev.item] })) }
+        else if (ev.type === 'error') { setProgress(null); patchLast(id, (m) => ({ ...m, error: ev.text })) }
       }, abort.current.signal)
     } catch (e) {
       if (e.name !== 'AbortError') patchLast(id, (m) => ({ ...m, error: `Couldn't reach the Fong AI server (${e.message}). Is \`${SERVER_CMD}\` running?` }))
     }
     setBusy(false)
     setStatus('')
+    setProgress(null)
     if (gotMedia) onMedia?.()
   }
 
@@ -70,5 +74,5 @@ export default function useChats({ settings, onMedia }) {
   const archive = (id) => { patch(id, { archived: true, pinned: false }); if (id === currentId) setCurrentId(null) }
   const clearAll = () => { setChats([]); setCurrentId(null) }
 
-  return { chats, chat, currentId, setCurrentId, busy, status, send, stop, startNew, remove, clearAll, togglePin, rename, archive }
+  return { chats, chat, currentId, setCurrentId, busy, status, progress, send, stop, startNew, remove, clearAll, togglePin, rename, archive }
 }

@@ -35,7 +35,7 @@ ANIMATEDIFF_BASE = os.environ.get("MINIMIND_ANIMATEDIFF_BASE", "emilianJR/epiCRe
 MEDIA_DIR = os.environ.get("MINIMIND_MEDIA_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "out", "media")))
 
 MEDIA_TOOLS = [
-    {"type": "function", "function": {"name": "generate_image", "description": "根据文字描述生成一张图片", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "图片内容的英文描述，如a cat sitting on the moon, digital art"}}, "required": ["prompt"]}}},
+    {"type": "function", "function": {"name": "generate_image", "description": "Create a picture from a text description: images, photos, drawings, logos, icons, posters, PNGs. 根据文字描述生成一张图片", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "图片内容的英文描述，如a cat sitting on the moon, digital art"}}, "required": ["prompt"]}}},
     {"type": "function", "function": {"name": "generate_video", "description": "根据文字描述生成一段几秒的短视频", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "视频内容的英文描述，如a dog running on the beach at sunset"}}, "required": ["prompt"]}}},
 ]
 MEDIA_TOOL_NAMES = {t["function"]["name"] for t in MEDIA_TOOLS}
@@ -163,22 +163,53 @@ def _out_path(kind, ext):
     return os.path.join(MEDIA_DIR, f"{kind}_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 1000:03d}.{ext}")
 
 
-def generate_image(prompt, steps=None, width=512, height=512):
+def _fit(image, longest=768):
+    """Keep the photo's shape (a tall poster stays tall); sides must be multiples of 8."""
+    w, h = image.size
+    k = longest / max(w, h)
+    return image.convert("RGB").resize((max(256, int(w * k) // 8 * 8), max(256, int(h * k) // 8 * 8)))
+
+
+def generate_image(prompt, steps=None, width=512, height=512, progress=None, init_image=None, strength=0.6):
+    """progress(floor, cap): reports how far along it is (0-1); the caller eases from floor toward cap.
+    init_image (PIL): edit that picture instead of starting from noise (keeps its layout and colors)."""
+    report = progress or (lambda floor, cap: None)
     with _lock:
+        report(0.02, 0.35 if "image" not in _pipes else 0.1)
         pipe = _get_image_pipe()
         turbo = "turbo" in IMAGE_MODEL.lower() or "schnell" in IMAGE_MODEL.lower()
-        steps = steps or (2 if turbo else 30)
         kw = {"guidance_scale": 0.0} if turbo else {}
+        if init_image is not None:
+            from diffusers import AutoPipelineForImage2Image
+            pipe = AutoPipelineForImage2Image.from_pipe(pipe)   # same weights, no extra memory
+            init_image = _fit(init_image)
+            # turbo img2img runs steps*strength denoising steps, which must be >= 1
+            steps = steps or (4 if turbo else 30)
+            kw.update(image=init_image, strength=strength)
+            width, height = init_image.size
+        else:
+            steps = steps or (2 if turbo else 30)
+            kw.update(width=width, height=height)
         st = time.time()
+        report(0.35, 0.45)
+
+        def on_step(p, i, t, cb_kwargs):
+            done = min(1, (i + 1) / max(1, getattr(p, "_num_timesteps", None) or steps))
+            report(0.35 + 0.5 * done, min(0.85, 0.5 + 0.5 * done))
+            return cb_kwargs
+        kw["callback_on_step_end"] = on_step
         if pipe.vae.dtype == torch.float32 and pipe.unet.dtype != torch.float32:
-            latents = pipe(prompt=prompt, num_inference_steps=steps, width=width, height=height, output_type="latent", **kw).images
+            latents = pipe(prompt=prompt, num_inference_steps=steps, output_type="latent", **kw).images
+            report(0.85, 0.97)
+            pipe.vae.to(torch.float32)   # img2img casts the VAE back to fp16 after encoding the photo
             with torch.no_grad():
                 decoded = pipe.vae.decode(latents.float() / pipe.vae.config.scaling_factor).sample
             image = pipe.image_processor.postprocess(decoded, output_type="pil")[0]
         else:
-            image = pipe(prompt=prompt, num_inference_steps=steps, width=width, height=height, **kw).images[0]
+            image = pipe(prompt=prompt, num_inference_steps=steps, **kw).images[0]
         path = _out_path("image", "png")
         image.save(path)
+        report(1.0, 1.0)
     return {"type": "image", "path": path, "prompt": prompt, "seconds": round(time.time() - st, 1)}
 
 
@@ -208,8 +239,9 @@ def generate_video(prompt, num_frames=33, steps=25, width=480, height=320, fps=1
     return {"type": "video", "path": path, "prompt": prompt, "seconds": round(time.time() - st, 1)}
 
 
-def execute_media_tool(name, args):
-    """Returns a JSON-serializable result dict, or None if `name` is not a media tool."""
+def execute_media_tool(name, args, progress=None, init_image=None):
+    """Returns a JSON-serializable result dict, or None if `name` is not a media tool.
+    progress / init_image: see generate_image (images only)."""
     if name not in MEDIA_TOOL_NAMES:
         return None
     prompt = (args or {}).get("prompt") or (args or {}).get("text") or ""
@@ -219,7 +251,8 @@ def execute_media_tool(name, args):
         original = prompt
         if needs_translation(prompt):
             prompt = translate(prompt)  # image/video text encoders only understand English well
-        result = generate_image(prompt) if name == "generate_image" else generate_video(prompt)
+        result = (generate_image(prompt, progress=progress, init_image=init_image) if name == "generate_image"
+                  else generate_video(prompt))
         if original != prompt:
             result["original_prompt"] = original
         return result

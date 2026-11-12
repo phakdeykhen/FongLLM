@@ -65,7 +65,7 @@ export default function App() {
     profile: () => (profile ? <ProfilePage profile={profile} setProfile={setProfile} /> : null),
     help: () => <HelpPage />,
     home: () => (chats.chat?.messages.length
-      ? <ChatPage chat={chats.chat} busy={chats.busy} status={chats.status} composer={composer(false)} onOpenImage={setLightbox}
+      ? <ChatPage chat={chats.chat} busy={chats.busy} status={chats.status} progress={chats.progress} composer={composer(false)} onOpenImage={setLightbox}
           onEdit={(text, i, imgs) => chats.send(text, i, imgs)}
           actions={{
             onPin: () => chats.togglePin(chats.currentId), onRename: (t) => chats.rename(chats.currentId, t),

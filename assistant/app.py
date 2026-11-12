@@ -1,4 +1,4 @@
-"""Voice + document assistant: Whisper (speech->text) -> mxbai (retrieval) -> FongAI or Mistral (answer).
+"""Voice + document assistant: Whisper (speech->text) -> mxbai (retrieval) -> FongAI, Mistral or Kimi K3.1 Pro (answer).
 
 Run:  cd ~/Documents/FongAI && source .venv/bin/activate && streamlit run assistant/app.py
 """
@@ -25,6 +25,9 @@ QUERY_PROMPT = "Represent this sentence for searching relevant passages: "  # mx
 LLM_MINIMIND = "FongAI (64M, ready-made)"
 LLM_OWN = "FongAI (your trained full_sft_768.pth)"
 LLM_MISTRAL = "Mistral 7B Instruct (Ollama)"
+LLM_KIMI = "Kimi K3.1 Pro (cloud API)"
+KIMI_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
+KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-k3.1-pro")
 
 st.set_page_config(page_title="FongAI Voice Assistant", page_icon="🎙️", layout="wide")
 
@@ -162,17 +165,49 @@ def answer_mistral(messages, temperature: float, max_new_tokens: int):
             yield part.get("message", {}).get("content", "")
 
 
+def answer_kimi(messages, max_new_tokens: int, effort: str):
+    """Kimi K3.1 Pro via Moonshot's OpenAI-compatible API. Thinking is always on and
+    temperature/top_p are fixed by the API, so they are not sent. Reasoning tokens count
+    toward max_completion_tokens, so extra room is added for them."""
+    key = os.environ.get("MOONSHOT_API_KEY")
+    if not key:
+        raise RuntimeError("Set MOONSHOT_API_KEY (get one at https://platform.kimi.ai/console/api-keys)")
+    r = requests.post(f"{KIMI_URL}/chat/completions", stream=True, timeout=600,
+        headers={"Authorization": f"Bearer {key}"}, json={
+        "model": KIMI_MODEL, "stream": True, "reasoning_effort": effort,
+        "max_completion_tokens": max_new_tokens + 8192,
+        "messages": [{"role": "system", "content": "You are FongAI, a helpful assistant."}] + messages})
+    if r.status_code != 200:
+        raise RuntimeError(f"Kimi API {r.status_code}: {r.text[:300]}")
+    for line in r.iter_lines():
+        if not line.startswith(b"data:"):
+            continue
+        data = line[5:].strip()
+        if data == b"[DONE]":
+            break
+        choices = json.loads(data).get("choices") or [{}]
+        text = choices[0].get("delta", {}).get("content")
+        if text:
+            yield text
+
+
 # ---------- UI ----------
 st.title("🎙️ FongAI Voice + Docs Assistant")
 st.caption(f"Whisper large-v2 → mxbai-embed-large → FongAI / Mistral · device: {DEVICE}")
 
 with st.sidebar:
     st.header("Answer model")
-    options = [LLM_MINIMIND, LLM_MISTRAL] + ([LLM_OWN] if os.path.exists(OWN_CKPT) else [])
+    options = [LLM_MINIMIND, LLM_MISTRAL, LLM_KIMI] + ([LLM_OWN] if os.path.exists(OWN_CKPT) else [])
     llm = st.radio("LLM", options, label_visibility="collapsed")
     if llm == LLM_MISTRAL and not ollama_ok():
         st.error("Ollama isn't running or `mistral` isn't pulled. Run: `brew services start ollama && ollama pull mistral`")
-    if llm != LLM_MISTRAL:
+    effort = "low"
+    if llm == LLM_KIMI:
+        if not os.environ.get("MOONSHOT_API_KEY"):
+            st.error("Set MOONSHOT_API_KEY before starting Streamlit (key from platform.kimi.ai, needs a $1+ top-up).")
+        effort = st.select_slider("Kimi reasoning effort", ["low", "high", "max"], value="low")
+        st.caption("Runs on Moonshot's servers (paid per token). Uses no RAM on this Mac.")
+    elif llm != LLM_MISTRAL:
         st.caption("FongAI is a tiny model trained mostly on Chinese; expect simple answers.")
     temperature = st.slider("Temperature", 0.0, 1.5, 0.7, 0.05)
     max_new = st.slider("Max answer tokens", 64, 2048, 512, 64)
@@ -222,7 +257,9 @@ if question:
     messages = build_messages(question, hits, st.session_state.history[-6:])
     with st.chat_message("assistant"):
         try:
-            if llm == LLM_MISTRAL:
+            if llm == LLM_KIMI:
+                stream = answer_kimi(messages, max_new, effort)
+            elif llm == LLM_MISTRAL:
                 stream = answer_mistral(messages, temperature, max_new)
             else:
                 stream = answer_minimind(messages, llm == LLM_OWN, temperature, max_new)

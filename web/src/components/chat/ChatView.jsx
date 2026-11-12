@@ -77,10 +77,24 @@ function UserMessage({ m, busy, onEdit }) {
   )
 }
 
-export default function ChatView({ chat, busy, status, onOpenImage, onEdit }) {
+// Placeholder while a picture or clip is being made: a dot grid with drifting glow and the percent done.
+function Generating({ kind, value }) {
+  return (
+    <div className="gen" role="status" aria-live="polite">
+      <div className="gen-label">Creating {kind}</div>
+      <div className="gen-canvas" aria-label={`Creating ${kind}, ${value}% done`}>
+        <div className="gen-dots" />
+        <div className="gen-dots lit" />
+        <span className="gen-pct">{value}%</span>
+      </div>
+    </div>
+  )
+}
+
+export default function ChatView({ chat, busy, status, progress, onOpenImage, onEdit }) {
   const end = useRef(null)
   const last = chat.messages[chat.messages.length - 1]
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [chat.messages.length, last?.content, status])
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [chat.messages.length, last?.content, status, progress?.kind])
 
   return (
     <div className="thread">
@@ -92,7 +106,9 @@ export default function ChatView({ chat, busy, status, onOpenImage, onEdit }) {
           {m.content && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>}
           {m.media?.map((item) => <MediaView key={item.url} item={item} onOpen={onOpenImage} />)}
           {m.error && <div className="msg-error">{m.error}</div>}
-          {busy && i === chat.messages.length - 1 ? (
+          {busy && i === chat.messages.length - 1 && progress ? (
+            <Generating kind={progress.kind} value={progress.value} />
+          ) : busy && i === chat.messages.length - 1 ? (
             <div className="thinking"><span className="think-mark" aria-hidden="true" />{status || 'Thinking…'}</div>
           ) : m.content && (
             <div className="msg-actions"><CopyButton text={m.content} /></div>
