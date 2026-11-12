@@ -85,7 +85,7 @@ export function SettingsPage({ settings, setSettings, info, onClearChats }) {
     <div className="page">
       <h1 className="page-title">Settings</h1>
       {info && !info.ollama && (
-        <p className="msg-error">Ollama isn't running or <code>{info.ollama_model}</code> isn't pulled. Run <code>brew services start ollama && ollama pull {info.ollama_model}</code></p>
+        <p className="msg-error">FongAI 3.4 isn't available. To start its engine, run <code>brew services start ollama && ollama pull {info.ollama_model}</code></p>
       )}
       <label className="field check">
         <input type="checkbox" checked={settings.use_tools} onChange={(e) => setSettings({ use_tools: e.target.checked })} />

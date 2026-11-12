@@ -40,12 +40,13 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 QUERY_PROMPT = "Represent this sentence for searching relevant passages: "  # mxbai query prefix
-SYSTEM_PROMPT = ("You are FongAI, a helpful assistant. You can create pictures with generate_image and short clips with "
+SYSTEM_PROMPT = ("You are FongAI 3.4, a helpful assistant made by Fong. If asked who you are or which model you are, "
+                 "say you are FongAI 3.4; never call yourself Mistral or mention Ollama. You can create pictures with generate_image and short clips with "
                  "generate_video; call them only when the user asks for an image, picture, drawing, photo or video, "
                  "and write the prompt argument in English. Otherwise just answer.")
 MODEL_INFO = [
-    {"id": "mistral", "name": f"{OLLAMA_MODEL.capitalize()} · Ollama", "detail": "Can create images and videos"},
-    {"id": "fongai", "name": "FongAI · 64M", "detail": "Tiny model trained here, mostly Chinese"},
+    {"id": "mistral", "name": "FongAI 3.4", "detail": "Smart and fast · creates images and videos"},
+    {"id": "fongai", "name": "FongAI 3.2", "detail": "Tiny 64M model trained here · mostly Chinese"},
 ]
 
 app = FastAPI(title="FongAI")
@@ -252,15 +253,15 @@ def chat_events(req: ChatRequest):
 
     mistral = req.model == "mistral"
     if mistral and not ollama_ok():
-        yield {"type": "error", "text": f"Ollama isn't running or `{OLLAMA_MODEL}` isn't pulled. "
-                                        f"Run: brew services start ollama && ollama pull {OLLAMA_MODEL}"}
+        yield {"type": "error", "text": "FongAI 3.4 isn't available right now. Switch to FongAI 3.2, or start its engine: "
+                                        f"brew services start ollama && ollama pull {OLLAMA_MODEL}"}
         return
     khmer = is_khmer(question) and mistral
     asked = question
     if khmer:  # Mistral understands Khmer poorly: translate in, answer in English, translate back
         yield {"type": "status", "text": "Translating from Khmer..."}
         asked = translate(question, "English")
-    yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI..."}
+    yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI 3.2..."}
     engine = answer_mistral if mistral else answer_minimind
     reply, first = "", True
     for ev in engine(history + [{"role": "user", "content": with_context(asked, hits)}],

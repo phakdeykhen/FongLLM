@@ -88,7 +88,7 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
     <div className={`composer ${big ? 'big' : ''}`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files) }}>
-      <textarea ref={ta} rows={1} value={text} placeholder={big ? 'How can I help you today?' : 'Reply to FongAI…'}
+      <textarea ref={ta} rows={1} value={text} placeholder={big ? 'How can I help you today?' : 'Reply to Fong AI…'}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} />
       <div className="composer-row">

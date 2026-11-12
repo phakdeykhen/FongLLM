@@ -46,7 +46,7 @@ export default function ChatView({ chat, busy, status, onOpenImage }) {
           {m.media?.map((item) => <MediaView key={item.url} item={item} onOpen={onOpenImage} />)}
           {m.error && <div className="msg-error">{m.error}</div>}
           {busy && i === chat.messages.length - 1 ? (
-            <div className="thinking"><span className="spark spin">✳</span>{status}</div>
+            <div className="thinking"><img src="/logo-mark.png" alt="" className="think-mark" />{status || 'Thinking…'}</div>
           ) : m.content && (
             <div className="msg-actions"><CopyButton text={m.content} /></div>
           )}

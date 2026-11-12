@@ -14,7 +14,7 @@ export default function Sidebar({ open, onToggle, view, chats, currentId, device
   return (
     <aside className={`sidebar ${open ? '' : 'closed'}`}>
       <div className="side-top">
-        <span className="brand">FongAI</span>
+        <span className="brand"><img src="/logo-mark.png" alt="" className="brand-mark" />Fong <span className="brand-ai">AI</span></span>
         <button className="icon-btn" onClick={onToggle} title="Close sidebar" aria-label="Close sidebar">
           <Icon name="sidebar" />
         </button>
@@ -39,7 +39,7 @@ export default function Sidebar({ open, onToggle, view, chats, currentId, device
           </div>
         ))}
       </div>
-      <div className="side-foot">FongAI · {device || '…'}</div>
+      <div className="side-foot">Fong AI · {device || '…'}</div>
     </aside>
   )
 }

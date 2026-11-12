@@ -6,12 +6,20 @@ Whisper voice input, mxbai document search, image/video generation).
 
 ## Run
 
-```bash
-cd ~/Documents/FongAI && source .venv/bin/activate
-uvicorn server.api:app --port 8000          # backend
+Start the backend (it also serves the built UI), then open http://localhost:8000:
 
-cd web && npm install && npm run build      # once, or after UI changes
-open http://localhost:8000                  # backend serves the built UI
+```bash
+cd ~/Documents/FongAI
+source .venv/bin/activate
+uvicorn server.api:app --port 8000
+```
+
+Build the UI once, and again after changing anything in `web/src` (in a second terminal):
+
+```bash
+cd ~/Documents/FongAI/web
+npm install
+npm run build
 ```
 
 While editing the UI, run `npm run dev` in `web/` and open http://localhost:5173

@@ -9,8 +9,8 @@ import { getInfo, listMedia, streamChat } from './api.js'
 
 const DEFAULT_SETTINGS = { model: 'mistral', temperature: 0.7, max_new: 512, use_tools: true, top_k: 3 }
 const FALLBACK_MODELS = [
-  { id: 'mistral', name: 'Mistral · Ollama', detail: 'Can create images and videos' },
-  { id: 'fongai', name: 'FongAI · 64M', detail: 'Tiny model trained here' },
+  { id: 'mistral', name: 'FongAI 3.4', detail: 'Smart and fast · creates images and videos' },
+  { id: 'fongai', name: 'FongAI 3.2', detail: 'Tiny 64M model trained here · mostly Chinese' },
 ]
 
 function load(key, fallback) {
@@ -127,17 +127,19 @@ export default function App() {
       <div className="chat-layout">
         <header className="chat-head"><span title={chat.title}>{chat.title}</span></header>
         <ChatView chat={chat} busy={busy} status={status} onOpenImage={setLightbox} />
-        <div className="dock">{composer(false)}<p className="dock-note">FongAI can make mistakes. Check important answers.</p></div>
+        <div className="dock">{composer(false)}<p className="dock-note">Fong AI can make mistakes. Check important answers.</p></div>
       </div>
     )
   } else {
     main = (
       <div className="home">
-        <h1 className="hero"><span className="spark">✳</span>Coffee and FongAI time?</h1>
+        <video className="hero-logo" src="/logo-mark.mp4" poster="/logo-mark-poster.jpg" autoPlay muted loop playsInline aria-label="Fong AI logo" />
+        <h1 className="hero">Coffee and <span className="brand-ai">Fong AI</span> time?</h1>
+        <p className="hero-sub">Your friendly language model</p>
         {composer(true)}
-        {info?.error && <p className="msg-error center">Can't reach the FongAI server. Start it with <code>uvicorn server.api:app --port 8000</code></p>}
+        {info?.error && <p className="msg-error center">Can't reach the Fong AI server. Start it with <code>uvicorn server.api:app --port 8000</code></p>}
         {info && !info.error && !info.ollama && settings.model === 'mistral' && (
-          <p className="msg-warn center">Ollama isn't running. Run <code>brew services start ollama</code>, or switch to FongAI · 64M.</p>
+          <p className="msg-warn center">FongAI 3.4 isn't available right now. Switch to FongAI 3.2, or see Settings to start it.</p>
         )}
         {recent.length > 0 && (
           <section className="recent-media">
