@@ -1,0 +1,21 @@
+# mlx_lm.lora settings for FongAI (QLoRA on the 4-bit Qwen 2.5 7B; fits a 16 GB Mac).
+model: finetune/base-qwen2.5-7b-4bit
+train: true
+data: finetune/data
+fine_tune_type: lora
+num_layers: 16          # adapt the top 16 of 28 layers
+batch_size: 2
+iters: 400              # ~3 passes over the data
+learning_rate: 1.0e-4
+max_seq_length: 1024
+grad_checkpoint: true   # trades speed for memory
+mask_prompt: true       # learn only the answers, not the questions
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+adapter_path: finetune/adapters
+seed: 7
+lora_parameters:
+  rank: 8
+  scale: 20.0
+  dropout: 0.0

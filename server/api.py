@@ -38,16 +38,19 @@ from media_tools import MEDIA_DIR, MEDIA_TOOLS, execute_media_tool, translate  #
 MODELS = os.environ.get("MINIMIND_ASSISTANT_MODELS", os.path.join(ROOT, "assistant", "models"))
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
+FONG_MODEL = os.environ.get("FONG_MODEL", "fongai")   # our own fine-tune, built by finetune/run.sh
+OLLAMA_IDS = {"mistral": OLLAMA_MODEL, "fong4": FONG_MODEL}   # app model id -> Ollama model name
 # Optional "Continue with Google": create an OAuth client ID (type "Web application") at
 # https://console.cloud.google.com/apis/credentials with authorized JavaScript origin http://localhost:8000
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 QUERY_PROMPT = "Represent this sentence for searching relevant passages: "  # mxbai query prefix
-SYSTEM_PROMPT = ("You are FongAI 3.4, a helpful assistant made by Fong. If asked who you are or which model you are, "
-                 "say you are FongAI 3.4; never call yourself Mistral or mention Ollama. You can create pictures with generate_image and short clips with "
+SYSTEM_PROMPT = ("You are {name}, a helpful assistant made by Fong. If asked who you are or which model you are, "
+                 "say you are {name}; never call yourself Mistral or Qwen or mention Ollama. You can create pictures with generate_image and short clips with "
                  "generate_video; call them only when the user asks for an image, picture, drawing, photo or video, "
                  "and write the prompt argument in English. Otherwise just answer.")
 MODEL_INFO = [
+    {"id": "fong4", "name": "FongAI 4", "detail": "Our own model · fine-tuned from Qwen 2.5 7B"},
     {"id": "mistral", "name": "FongAI 3.4", "detail": "Smart and fast · creates images and videos"},
     {"id": "fongai", "name": "FongAI 3.2", "detail": "Tiny 64M model trained here · mostly Chinese"},
 ]
@@ -82,19 +85,20 @@ def load_minimind():
     return (model.half() if DEVICE != "cpu" else model).eval().to(DEVICE), tok
 
 
-def ollama_ok():
+def ollama_ok(name=OLLAMA_MODEL):
     try:
         tags = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2).json()
-        return any(m["name"].split(":")[0] == OLLAMA_MODEL.split(":")[0] for m in tags.get("models", []))
+        return any(m["name"].split(":")[0] == name.split(":")[0] for m in tags.get("models", []))
     except Exception:
         return False
 
 
 def unload_ollama():
-    try:
-        requests.post(f"{OLLAMA_URL}/api/generate", json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=30)
-    except Exception:
-        pass
+    for name in set(OLLAMA_IDS.values()):
+        try:
+            requests.post(f"{OLLAMA_URL}/api/generate", json={"model": name, "keep_alive": 0}, timeout=30)
+        except Exception:
+            pass
 
 
 # ---------- documents (kept in memory; this is a single-user local app) ----------
@@ -157,9 +161,10 @@ def run_tool(name, args):
 
 
 # ---------- answer engines (generators of events) ----------
-def answer_mistral(messages, temperature, max_new, use_tools):
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-    body = {"model": OLLAMA_MODEL, "messages": msgs, "stream": True,
+def answer_ollama(messages, temperature, max_new, use_tools, name=OLLAMA_MODEL):
+    label = next((m["name"] for m in MODEL_INFO if OLLAMA_IDS.get(m["id"]) == name), "Fong AI")
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT.format(name=label)}] + messages
+    body = {"model": name, "messages": msgs, "stream": True,
             "options": {"temperature": temperature, "num_predict": max_new}}
     if use_tools:
         body["tools"] = MEDIA_TOOLS
@@ -254,10 +259,12 @@ def chat_events(req: ChatRequest):
     else:
         hits = []
 
-    mistral = req.model == "mistral"
-    if mistral and not ollama_ok():
-        yield {"type": "error", "text": "FongAI 3.4 isn't available right now. Switch to FongAI 3.2, or start its engine: "
-                                        f"brew services start ollama && ollama pull {OLLAMA_MODEL}"}
+    ollama_name = OLLAMA_IDS.get(req.model)
+    mistral = ollama_name is not None   # any Ollama-served model (FongAI 4 or 3.4)
+    if mistral and not ollama_ok(ollama_name):
+        fix = "zsh finetune/run.sh" if req.model == "fong4" else f"ollama pull {ollama_name}"
+        yield {"type": "error", "text": "This model isn't available right now. Pick another model, or start it: "
+                                        f"brew services start ollama && {fix}"}
         return
     khmer = is_khmer(question) and mistral
     asked = question
@@ -265,7 +272,7 @@ def chat_events(req: ChatRequest):
         yield {"type": "status", "text": "Translating from Khmer..."}
         asked = translate(question, "English")
     yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI 3.2..."}
-    engine = answer_mistral if mistral else answer_minimind
+    engine = (lambda *a: answer_ollama(*a, name=ollama_name)) if mistral else answer_minimind
     reply, first = "", True
     for ev in engine(history + [{"role": "user", "content": with_context(asked, hits)}],
                      req.temperature, req.max_new, req.use_tools):
@@ -283,7 +290,8 @@ def chat_events(req: ChatRequest):
 # ---------- routes ----------
 @app.get("/api/info")
 def info():
-    return {"device": DEVICE, "models": MODEL_INFO, "ollama": ollama_ok(), "ollama_model": OLLAMA_MODEL,
+    return {"device": DEVICE, "models": [m for m in MODEL_INFO if m["id"] != "fong4" or ollama_ok(FONG_MODEL)],
+            "ollama": ollama_ok(), "ollama_model": OLLAMA_MODEL,
             "google_client_id": GOOGLE_CLIENT_ID or None}
 
 
