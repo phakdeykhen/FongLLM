@@ -30,6 +30,7 @@ swanlab==0.9.8
 modelscope==1.37.0
 fastapi==0.120.1
 uvicorn==0.38.0
+python-multipart==0.0.33
 # torch==2.6.0
 # torchvision==0.21.0
 # peft==0.7.1
