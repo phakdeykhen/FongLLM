@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import Icon from './Icon.jsx'
-import { MediaView } from './Media.jsx'
+import Icon from '@/components/ui/Icon.jsx'
+import { MediaView } from '@/components/media/Media.jsx'
 
 function CopyButton({ text }) {
   const [done, setDone] = useState(false)
@@ -46,7 +46,7 @@ export default function ChatView({ chat, busy, status, onOpenImage }) {
           {m.media?.map((item) => <MediaView key={item.url} item={item} onOpen={onOpenImage} />)}
           {m.error && <div className="msg-error">{m.error}</div>}
           {busy && i === chat.messages.length - 1 ? (
-            <div className="thinking"><img src="/logo-mark.png" alt="" className="think-mark" />{status || 'Thinking…'}</div>
+            <div className="thinking"><span className="think-mark" aria-hidden="true" />{status || 'Thinking…'}</div>
           ) : m.content && (
             <div className="msg-actions"><CopyButton text={m.content} /></div>
           )}

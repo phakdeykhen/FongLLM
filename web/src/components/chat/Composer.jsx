@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import Icon from './Icon.jsx'
-import { transcribe, uploadDocuments } from '../api.js'
-import { startRecording } from '../recorder.js'
+import Icon from '@/components/ui/Icon.jsx'
+import { transcribe, uploadDocuments } from '@/api/client.js'
+import { startRecording } from '@/lib/recorder.js'
 
 const AUDIO = /\.(wav|flac|mp3|ogg|m4a)$/i
 const DOC = /\.(txt|md)$/i

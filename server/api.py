@@ -38,6 +38,9 @@ from media_tools import MEDIA_DIR, MEDIA_TOOLS, execute_media_tool, translate  #
 MODELS = os.environ.get("MINIMIND_ASSISTANT_MODELS", os.path.join(ROOT, "assistant", "models"))
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
+# Optional "Continue with Google": create an OAuth client ID (type "Web application") at
+# https://console.cloud.google.com/apis/credentials with authorized JavaScript origin http://localhost:8000
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 QUERY_PROMPT = "Represent this sentence for searching relevant passages: "  # mxbai query prefix
 SYSTEM_PROMPT = ("You are FongAI 3.4, a helpful assistant made by Fong. If asked who you are or which model you are, "
@@ -280,7 +283,47 @@ def chat_events(req: ChatRequest):
 # ---------- routes ----------
 @app.get("/api/info")
 def info():
-    return {"device": DEVICE, "models": MODEL_INFO, "ollama": ollama_ok(), "ollama_model": OLLAMA_MODEL}
+    return {"device": DEVICE, "models": MODEL_INFO, "ollama": ollama_ok(), "ollama_model": OLLAMA_MODEL,
+            "google_client_id": GOOGLE_CLIENT_ID or None}
+
+
+class GoogleLogin(BaseModel):
+    credential: str   # the ID token Google Identity Services gives the browser
+
+
+@app.post("/api/auth/google")
+def auth_google(body: GoogleLogin):
+    """Checks a Google sign-in and returns the profile. Nothing is stored on the server."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(400, "Google sign-in isn't set up. Start the server with GOOGLE_CLIENT_ID=<your client id>.")
+    try:  # Google checks the signature and expiry for us
+        r = requests.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": body.credential}, timeout=10)
+    except requests.RequestException:
+        raise HTTPException(502, "Couldn't reach Google to check the sign-in. Check your internet connection.")
+    t = r.json() if r.ok else {}
+    if not r.ok or t.get("aud") != GOOGLE_CLIENT_ID or t.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise HTTPException(401, "Google sign-in failed. Please try again.")
+    return {"name": t.get("name") or t.get("email", "").split("@")[0], "email": t.get("email"),
+            "picture": t.get("picture"), "provider": "google"}
+
+
+class ImageRequest(BaseModel):
+    prompt: str
+
+
+@app.post("/api/image")
+def make_image(body: ImageRequest):
+    """Generates one image directly (Images page). Same model and folder as /image in chat."""
+    if not body.prompt.strip():
+        raise HTTPException(400, "Describe the image you want.")
+    with GPU_LOCK:
+        unload_ollama()
+        result = execute_media_tool("generate_image", {"prompt": body.prompt.strip()})
+    if not result or "path" not in result:
+        raise HTTPException(500, (result or {}).get("error", "Image generation failed."))
+    item = media_item(result["path"], "image", result.get("prompt"))
+    item["seconds"] = result.get("seconds")
+    return item
 
 
 @app.post("/api/chat")

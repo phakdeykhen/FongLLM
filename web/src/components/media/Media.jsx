@@ -1,17 +1,20 @@
-const fmt = (iso) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+import { formatDate as fmt, timeAgo } from '@/lib/format.js'
+import Icon from '@/components/ui/Icon.jsx'
 
 export function MediaCard({ item, onOpen, large }) {
+  const video = item.type === 'video'
   return (
     <figure className={`mcard ${large ? 'large' : ''}`}>
-      <button className="mthumb" onClick={() => onOpen?.(item)} aria-label="Open">
-        {item.type === 'video'
+      <button className="mthumb" onClick={() => onOpen?.(item)} aria-label={`Open ${video ? 'video' : 'image'}`} title={fmt(item.date)}>
+        {video
           ? <video src={item.url} muted preload="metadata" />
           : <img src={item.url} alt={item.prompt || 'Generated image'} loading="lazy" />}
+        {video && <span className="mbadge"><Icon name="play" size={13} />{item.seconds ? `${item.seconds}s` : 'Video'}</span>}
+        <span className="mcap">
+          {item.prompt && <span className="mtitle">{item.prompt}</span>}
+          <span className="mdate">{timeAgo(item.date)}</span>
+        </span>
       </button>
-      <figcaption>
-        <span className="mtitle">{item.prompt || (item.type === 'video' ? 'Video' : 'Image')}</span>
-        <span className="mdate">{fmt(item.date)}</span>
-      </figcaption>
     </figure>
   )
 }
