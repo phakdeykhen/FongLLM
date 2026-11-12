@@ -40,6 +40,7 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
 FONG_MODEL = os.environ.get("FONG_MODEL", "fongai")   # our own fine-tune, built by finetune/run.sh
 OLLAMA_IDS = {"mistral": OLLAMA_MODEL, "fong4": FONG_MODEL}   # app model id -> Ollama model name
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen2.5vl:7b")   # answers when the user attaches photos
 # Optional "Continue with Google": create an OAuth client ID (type "Web application") at
 # https://console.cloud.google.com/apis/credentials with authorized JavaScript origin http://localhost:8000
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
@@ -49,8 +50,10 @@ SYSTEM_PROMPT = ("You are {name}, a helpful assistant made by Fong. If asked who
                  "say you are {name}; never call yourself Mistral or Qwen or mention Ollama. You can create pictures with generate_image and short clips with "
                  "generate_video; call them only when the user asks for an image, picture, drawing, photo or video, "
                  "and write the prompt argument in English. Otherwise just answer.")
+VISION_SYSTEM = ("You are Fong AI, a helpful assistant made by Fong. Never call yourself Qwen. Look carefully at the attached "
+                 "image(s) and answer the user's question about them. Reply in the user's language (English, Khmer, Chinese, ...).")
 MODEL_INFO = [
-    {"id": "fong4", "name": "FongAI 4", "detail": "Our own model · fine-tuned from Qwen 2.5 7B"},
+    {"id": "fong4", "name": "FongAI 4", "detail": "Our own model · creates images and videos"},
     {"id": "mistral", "name": "FongAI 3.4", "detail": "Smart and fast · creates images and videos"},
     {"id": "fongai", "name": "FongAI 3.2", "detail": "Tiny 64M model trained here · mostly Chinese"},
 ]
@@ -94,7 +97,7 @@ def ollama_ok(name=OLLAMA_MODEL):
 
 
 def unload_ollama():
-    for name in set(OLLAMA_IDS.values()):
+    for name in set(OLLAMA_IDS.values()) | {VISION_MODEL}:
         try:
             requests.post(f"{OLLAMA_URL}/api/generate", json={"model": name, "keep_alive": 0}, timeout=30)
         except Exception:
@@ -194,6 +197,24 @@ def answer_ollama(messages, temperature, max_new, use_tools, name=OLLAMA_MODEL):
                 yield {"type": "text", "delta": ("\n\n" if text else "") + done}
 
 
+def answer_vision(messages, temperature, max_new, images):
+    """Photos attached: a vision model reads them. 16GB can't hold two 7B models, so free the chat model first."""
+    for name in set(OLLAMA_IDS.values()):
+        try:
+            requests.post(f"{OLLAMA_URL}/api/generate", json={"model": name, "keep_alive": 0}, timeout=30)
+        except Exception:
+            pass
+    msgs = [{"role": "system", "content": VISION_SYSTEM}] + messages[:-1] + [dict(messages[-1], images=images)]
+    body = {"model": VISION_MODEL, "messages": msgs, "stream": True,
+            "options": {"temperature": temperature, "num_predict": max_new}}
+    r = requests.post(f"{OLLAMA_URL}/api/chat", json=body, stream=True, timeout=600)
+    r.raise_for_status()
+    for line in r.iter_lines():
+        piece = json.loads(line).get("message", {}).get("content", "") if line else ""
+        if piece:
+            yield {"type": "text", "delta": piece}
+
+
 def answer_minimind(messages, temperature, max_new, use_tools):
     from transformers import TextIteratorStreamer
     model, tok = load_minimind()
@@ -233,8 +254,9 @@ def is_khmer(text):
 
 
 class ChatRequest(BaseModel):
-    messages: list[dict]            # [{"role": "user"|"assistant", "content": str}, ...]; last one is the question
-    model: str = "mistral"
+    messages: list[dict]            # [{"role": "user"|"assistant", "content": str}, ...]; last one is the question,
+                                    # optionally with "images": [data URL or base64, ...] (photos to look at)
+    model: str = "fong4"
     temperature: float = 0.7
     max_new: int = 512
     use_tools: bool = True
@@ -252,6 +274,20 @@ def chat_events(req: ChatRequest):
             yield {"type": "text", "delta": f"Here is your {result['type']} ({result['seconds']}s)."}
         return
 
+    images = [i.split(",", 1)[-1] for i in req.messages[-1].get("images") or []]   # strip "data:image/...;base64,"
+    if images:
+        if not ollama_ok(VISION_MODEL):
+            yield {"type": "error", "text": f"Photo understanding isn't installed yet. Run: ollama pull {VISION_MODEL}"}
+            return
+        yield {"type": "status", "text": "Looking at your photo..."}
+        first = True
+        for ev in answer_vision(history + [{"role": "user", "content": question}], req.temperature, req.max_new, images):
+            if first:
+                yield {"type": "status", "text": ""}
+                first = False
+            yield ev
+        return
+
     if INDEX["emb"] is not None:
         yield {"type": "status", "text": "Searching your documents..."}
         hits = retrieve(question, req.top_k)
@@ -266,9 +302,9 @@ def chat_events(req: ChatRequest):
         yield {"type": "error", "text": "This model isn't available right now. Pick another model, or start it: "
                                         f"brew services start ollama && {fix}"}
         return
-    khmer = is_khmer(question) and mistral
+    khmer = is_khmer(question) and mistral   # FongAI 4 knows its name in Khmer but gets Khmer facts wrong, so translate too
     asked = question
-    if khmer:  # Mistral understands Khmer poorly: translate in, answer in English, translate back
+    if khmer:  # the Ollama models understand Khmer poorly: translate in, answer in English, translate back
         yield {"type": "status", "text": "Translating from Khmer..."}
         asked = translate(question, "English")
     yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI 3.2..."}

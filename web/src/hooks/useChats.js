@@ -21,7 +21,8 @@ export default function useChats({ settings, onMedia }) {
   })
 
   // `upto` (edit / retry): drop the message at that index and everything after it, then send `text` in its place.
-  async function send(text, upto) {
+  // `images`: photo data URLs attached to this message (sent to the vision model, kept with the message).
+  async function send(text, upto, images = []) {
     if (busy) return
     let id = currentId
     const cut = (msgs) => (upto == null ? msgs : msgs.slice(0, upto))
@@ -34,7 +35,7 @@ export default function useChats({ settings, onMedia }) {
     const history = base.filter((m) => m.content).map(({ role, content }) => ({ role, content }))
     updateChat(id, (c) => ({
       ...c, updated: Date.now(),
-      messages: [...cut(c.messages), { role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: '', media: [], sources: [] }],
+      messages: [...cut(c.messages), { role: 'user', content: text, at: Date.now(), ...(images.length && { images }) }, { role: 'assistant', content: '', media: [], sources: [] }],
     }))
     setBusy(true)
     setStatus('')
@@ -42,7 +43,7 @@ export default function useChats({ settings, onMedia }) {
     let gotMedia = false
     try {
       await streamChat({
-        messages: [...history, { role: 'user', content: text }],
+        messages: [...history, { role: 'user', content: text, ...(images.length && { images }) }],
         model: settings.model, temperature: settings.temperature, max_new: settings.max_new,
         use_tools: settings.use_tools, top_k: settings.top_k,
       }, (ev) => {

@@ -51,7 +51,7 @@ export default function App() {
   useShortcuts({ onNewChat: newChat, onSettings: () => setView('settings') })
 
   const composer = (big) => (
-    <Composer big={big} busy={chats.busy} autoFocus onSend={(t) => { setView('home'); chats.send(t) }} onStop={chats.stop}
+    <Composer big={big} busy={chats.busy} autoFocus onSend={(t, imgs) => { setView('home'); chats.send(t, undefined, imgs) }} onStop={chats.stop}
       models={info?.models || FALLBACK_MODELS} model={settings.model} onModel={(m) => setSettings({ model: m })} onDocs={setDocs} />
   )
 
@@ -66,7 +66,7 @@ export default function App() {
     help: () => <HelpPage />,
     home: () => (chats.chat?.messages.length
       ? <ChatPage chat={chats.chat} busy={chats.busy} status={chats.status} composer={composer(false)} onOpenImage={setLightbox}
-          onEdit={(text, i) => chats.send(text, i)}
+          onEdit={(text, i, imgs) => chats.send(text, i, imgs)}
           actions={{
             onPin: () => chats.togglePin(chats.currentId), onRename: (t) => chats.rename(chats.currentId, t),
             onArchive: () => chats.archive(chats.currentId), onDelete: () => chats.remove(chats.currentId),

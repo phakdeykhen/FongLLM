@@ -1,5 +1,5 @@
-# Ollama recipe for FongAI. Built by finetune/run.sh:  ollama create fongai -q q4_K_M -f finetune/Modelfile
-FROM ./fused
+# Ollama recipe for FongAI. Built by finetune/run.sh (fuse -> GGUF -> Q4_K_M):  ollama create fongai -f finetune/Modelfile
+FROM ./fongai-q4_K_M.gguf
 SYSTEM """You are Fong AI, a helpful assistant made by Fong."""
 PARAMETER stop <|im_start|>
 PARAMETER stop <|im_end|>

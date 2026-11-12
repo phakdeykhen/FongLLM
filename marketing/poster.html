@@ -1,0 +1,99 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Manrope:wght@500;700&family=Kantumruy+Pro:wght@500;700&display=swap">
+<style>
+:root{--bg:#0b0c13;--bg2:#171c33;--fg:#f1f3fb;--muted:#a3abc8;--blue:#3d8bff;--violet:#a65cff;--line:#2c3252;
+ --display:"Unbounded",system-ui,sans-serif;--body:"Manrope",system-ui,sans-serif;--khmer:"Kantumruy Pro","Khmer MN","Khmer Sangam MN",sans-serif}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden}
+.poster{position:relative;overflow:hidden;background:radial-gradient(70% 50% at 50% 30%,var(--bg2) 0%,var(--bg) 72%)}
+.poster::after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(160,190,255,.10) 1px,transparent 1px);background-size:28px 28px;mask-image:radial-gradient(80% 60% at 50% 40%,#000 0%,transparent 75%);pointer-events:none}
+#stage canvas{width:100%!important;height:100%!important;display:block;filter:drop-shadow(0 0 22px rgba(70,130,255,.6)) drop-shadow(0 24px 60px rgba(166,92,255,.5))}
+.wm{font-family:var(--display);font-weight:800;letter-spacing:-.02em;line-height:1}
+.wm .ai{background:linear-gradient(180deg,#6fc3ff 0%,var(--blue) 45%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.km{font-family:var(--khmer);font-weight:700;line-height:1.5}
+.chips{display:flex;flex-wrap:wrap;gap:12px}
+.chip{border:1.5px solid var(--line);border-radius:999px;padding:10px 20px;font-weight:700;color:var(--fg);background:rgba(23,28,51,.7)}
+.chip i{font-style:normal;font-family:var(--khmer)}
+.cta{display:inline-flex;align-items:center;gap:14px;border-radius:999px;padding:14px 28px;background:linear-gradient(90deg,var(--blue),var(--violet));font-weight:700}
+.cta .km{font-weight:500}
+.foot{color:var(--muted);letter-spacing:.2em;text-transform:uppercase;font-size:15px}
+/* tall: 1080x1350 */
+.tall{width:1080px;height:1350px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:40px 70px 56px}
+.tall #stage{width:540px;height:540px;margin-top:-10px}
+.tall .wm{font-size:92px;margin-top:-70px}
+.tall .km.h{font-size:48px;margin-top:20px}
+.tall .sub{font-size:25px;color:var(--muted);margin-top:4px;line-height:1.4}
+.chat{width:780px;display:flex;flex-direction:column;gap:14px;margin-top:40px;text-align:left}
+.b{max-width:620px;border-radius:22px;padding:14px 22px;font-size:25px;line-height:1.55}
+.b.u{align-self:flex-end;background:linear-gradient(90deg,var(--blue),var(--violet));border-bottom-right-radius:6px}
+.b.a{align-self:flex-start;background:rgba(23,28,51,.9);border:1.5px solid var(--line);border-bottom-left-radius:6px}
+.b .who{display:block;font:700 14px var(--body);letter-spacing:.14em;text-transform:uppercase;color:#7fb6ff;margin-bottom:2px}
+.cmp{width:100%;margin-top:30px}
+.cmp table{width:100%;border-collapse:separate;border-spacing:0;font-size:21px}
+.cmp th{font:700 19px var(--body);color:var(--muted);padding:10px 6px}
+.cmp td{text-align:center;padding:11px 6px;border-top:1.5px solid var(--line);color:var(--muted);font-size:18px}
+.cmp td.lab{text-align:left;color:var(--fg);font-weight:700;font-size:20px;padding-left:4px;white-space:nowrap}
+.cmp .me{background:rgba(61,139,255,.13);color:var(--fg)}
+.cmp th.me{color:#fff;border-radius:16px 16px 0 0;background:linear-gradient(180deg,rgba(61,139,255,.45),rgba(61,139,255,.13))}
+.cmp tr:last-child td.me{border-radius:0 0 16px 16px}
+.cmp td b{color:#fff}
+.ic{width:30px;height:30px;vertical-align:middle}.ic.y{color:#5ee0a0}.ic.n{color:#59607c}
+.cmp .note{font-size:15px;color:var(--muted);margin-top:12px;text-align:center}
+.wide .cmp{display:none}
+
+.tall .cta{margin-top:auto}
+.tall .cta{margin-top:auto;font-size:28px}
+.tall .foot{margin-top:22px}
+/* wide: 1200x630 */
+.wide{width:1200px;height:630px;display:grid;grid-template-columns:520px 1fr;align-items:center;padding:0 70px 0 10px}
+.wide #stage{width:520px;height:520px}
+.wide .txt{display:flex;flex-direction:column;align-items:flex-start;gap:0;position:relative;z-index:1}
+.wide .wm{font-size:84px}
+.wide .km.h{font-size:44px;margin-top:18px}
+.wide .sub{font-size:22px;color:var(--muted);margin-top:2px;max-width:30ch;line-height:1.4}
+.wide .chips{margin-top:26px;font-size:18px;gap:10px}
+.wide .chip{padding:8px 16px}
+.wide .cta{margin-top:28px;font-size:20px;padding:11px 22px}
+.wm .ver{font-size:.42em;color:var(--muted);letter-spacing:0;vertical-align:.95em;margin-left:-.1em}
+.h{font-family:var(--display);font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.stats{display:flex;gap:16px}
+.stats div{flex:1;border:1.5px solid var(--line);border-radius:18px;padding:16px 10px;background:rgba(23,28,51,.7);display:flex;flex-direction:column;align-items:center}
+.stats b{font-family:var(--display);font-weight:800;background:linear-gradient(180deg,#6fc3ff,var(--blue) 50%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1.1}
+.stats span{color:var(--muted);font-weight:700}
+.note{color:var(--muted)}
+.tall .h{font-size:50px;margin-top:22px}
+.tall .stats{width:100%;margin-top:34px}.tall .stats b{font-size:50px}.tall .stats span{font-size:20px;margin-top:4px}
+.tall .chips{justify-content:center;font-size:22px;margin-top:30px}
+.tall .note{font-size:15px;margin-top:14px}
+.tall .sub{margin-top:14px}
+.wide .h{font-size:34px;margin-top:14px}
+.wide .stats{display:none}.wide .note{display:none}
+.wide .sub{max-width:34ch}
+</style></head><body>
+<div id="wrap" class="poster">
+ <div id="stage"></div>
+ <div class="txt">
+  <div class="wm"><span>Fong</span> <span class="ai">AI</span> <span class="ver">3.4</span></div>
+  <div class="h">My own LLM.<br>Running on my own machine.</div>
+  <div class="sub">A real large language model, self-hosted. No cloud, no outside company.</div>
+  <div class="stats">
+    <div><b>7B</b><span>parameters</span></div>
+    <div><b>100%</b><span>self-hosted &amp; private</span></div>
+    <div><b>GPT-3.5</b><span>class*</span></div>
+  </div>
+  <div class="chips"><span class="chip">Chat</span><span class="chip">Writing</span><span class="chip">Code</span><span class="chip">Images</span><span class="chip">Short videos</span></div>
+  <div class="cta"><span>Coming soon</span></div>
+  <div class="note">*Built on Qwen 2.5 7B, which scores about 74 on the MMLU benchmark vs about 70 for GPT-3.5 Turbo.</div>
+  <div class="foot">Made by Khen Phakdey · “Fong”</div>
+ </div>
+</div>
+<div hidden><button id="lockup"></button><button id="solo"></button><button id="replay"></button></div>
+<script>
+const wide = location.hash === '#wide';
+const w = document.getElementById('wrap'); w.classList.add(wide ? 'wide' : 'tall');
+if (wide) { document.querySelector('.foot').remove(); document.querySelectorAll('.chip')[1].remove(); }
+else { const st=document.querySelector('.stats'); st.after(document.querySelector('.note')); const t = document.querySelector('.txt'); while (t.firstChild) w.appendChild(t.firstChild); t.remove(); }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script src="logo-static.js"></script>
+</body></html>

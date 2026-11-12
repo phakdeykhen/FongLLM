@@ -36,7 +36,7 @@ function UserMessage({ m, busy, onEdit }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(m.content)
   const start = () => { setDraft(m.content); setEditing(true) }
-  const save = () => { const t = draft.trim(); if (!t) return; setEditing(false); onEdit(t) }
+  const save = () => { const t = draft.trim(); if (!t) return; setEditing(false); onEdit(t, m.images) }
 
   if (editing) {
     return (
@@ -59,10 +59,13 @@ function UserMessage({ m, busy, onEdit }) {
   }
   return (
     <div className="user-row">
+      {m.images?.length > 0 && (
+        <div className="user-pics">{m.images.map((src, i) => <img key={i} src={src} alt={`Your photo ${i + 1}`} />)}</div>
+      )}
       <div className="user-bubble">{m.content}</div>
       <div className="user-actions">
         {m.at && <span className="msg-time">{timeAgo(m.at)}</span>}
-        <button className="msg-action" title="Retry" aria-label="Retry this message" disabled={busy} onClick={() => onEdit(m.content)}>
+        <button className="msg-action" title="Retry" aria-label="Retry this message" disabled={busy} onClick={() => onEdit(m.content, m.images)}>
           <Icon name="retry" size={15} />
         </button>
         <button className="msg-action" title="Edit" aria-label="Edit this message" disabled={busy} onClick={start}>
@@ -82,7 +85,7 @@ export default function ChatView({ chat, busy, status, onOpenImage, onEdit }) {
   return (
     <div className="thread">
       {chat.messages.map((m, i) => m.role === 'user' ? (
-        <UserMessage key={i} m={m} busy={busy} onEdit={(text) => onEdit(text, i)} />
+        <UserMessage key={i} m={m} busy={busy} onEdit={(text, imgs) => onEdit(text, i, imgs)} />
       ) : (
         <div key={i} className="assistant">
           <Sources items={m.sources} />

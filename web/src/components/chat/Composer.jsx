@@ -5,12 +5,31 @@ import { startRecording } from '@/lib/recorder.js'
 
 const AUDIO = /\.(wav|flac|mp3|ogg|m4a)$/i
 const DOC = /\.(txt|md)$/i
+const IMAGE = /\.(png|jpe?g|webp|gif|heic|bmp)$/i
+
+// Shrink a photo to at most 1024px JPEG: plenty for the vision model, and small enough to keep in saved chats.
+function shrink(f) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const k = Math.min(1, 1024 / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(img.src)
+      resolve(c.toDataURL('image/jpeg', 0.85))
+    }
+    img.onerror = () => reject(new Error(`Couldn't open ${f.name}`))
+    img.src = URL.createObjectURL(f)
+  })
+}
 
 export default function Composer({ big, busy, onSend, onStop, models, model, onModel, onDocs, autoFocus }) {
   const [text, setText] = useState('')
   const [note, setNote] = useState('')
   const [recording, setRecording] = useState(null) // stop() function while recording
   const [menu, setMenu] = useState(false)
+  const [pics, setPics] = useState([]) // attached photos (data URLs) for the next message
   const ta = useRef(null)
   const file = useRef(null)
 
@@ -29,17 +48,24 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
   }, [menu])
 
   function send() {
-    const t = text.trim()
+    const t = text.trim() || (pics.length ? 'What is in this photo?' : '')
     if (!t || busy) return
-    onSend(t)
+    onSend(t, pics)
     setText('')
+    setPics([])
     setNote('')
   }
 
   async function addFiles(files) {
     const docs = [...files].filter((f) => DOC.test(f.name))
     const audio = [...files].find((f) => AUDIO.test(f.name))
+    const images = [...files].filter((f) => f.type.startsWith('image/') || IMAGE.test(f.name))
     try {
+      if (images.length) {
+        const urls = await Promise.all(images.slice(0, 4).map(shrink))
+        setPics((old) => [...old, ...urls].slice(0, 4))
+        ta.current?.focus()
+      }
       if (docs.length) {
         setNote(`Indexing ${docs.map((d) => d.name).join(', ')}…`)
         const r = await uploadDocuments(docs)
@@ -52,7 +78,7 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
         setText((old) => (old ? old + ' ' : '') + t)
         setNote('')
       }
-      if (!docs.length && !audio) setNote('Attach .txt or .md documents, or an audio file.')
+      if (!docs.length && !audio && !images.length) setNote('Attach photos, .txt or .md documents, or an audio file.')
     } catch (e) {
       setNote(e.message)
     }
@@ -88,14 +114,27 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
     <div className={`composer ${big ? 'big' : ''}`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files) }}>
+      {pics.length > 0 && (
+        <div className="composer-pics">
+          {pics.map((p, i) => (
+            <div key={i} className="composer-pic">
+              <img src={p} alt={`Attached photo ${i + 1}`} />
+              <button aria-label="Remove photo" title="Remove" onClick={() => setPics(pics.filter((_, j) => j !== i))}>
+                <Icon name="x" size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <textarea ref={ta} rows={1} value={text} placeholder={big ? 'How can I help you today?' : 'Reply to Fong AI…'}
         onChange={(e) => setText(e.target.value)}
+        onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files) } }}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} />
       <div className="composer-row">
-        <button className="icon-btn" title="Attach documents or audio" aria-label="Attach files" onClick={() => file.current.click()}>
+        <button className="icon-btn" title="Attach photos, documents or audio" aria-label="Attach files" onClick={() => file.current.click()}>
           <Icon name="plus" size={20} />
         </button>
-        <input ref={file} type="file" multiple hidden accept=".txt,.md,.wav,.flac,.mp3,.ogg,.m4a"
+        <input ref={file} type="file" multiple hidden accept="image/*,.txt,.md,.wav,.flac,.mp3,.ogg,.m4a"
           onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
         {note && <span className="composer-note">{note}</span>}
         <div className="grow" />
@@ -124,7 +163,7 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
         {busy ? (
           <button className="send" onClick={onStop} title="Stop" aria-label="Stop"><Icon name="stop" size={16} /></button>
         ) : (
-          <button className="send" onClick={send} disabled={!text.trim()} title="Send" aria-label="Send"><Icon name="arrowUp" size={18} /></button>
+          <button className="send" onClick={send} disabled={!text.trim() && !pics.length} title="Send" aria-label="Send"><Icon name="arrowUp" size={18} /></button>
         )}
       </div>
     </div>

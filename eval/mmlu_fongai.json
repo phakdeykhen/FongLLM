@@ -1,0 +1,20 @@
+{
+  "model": "fongai",
+  "questions": 57,
+  "per_subject": 1,
+  "accuracy": 80.7,
+  "weakest": {
+    "moral_scenarios": 0,
+    "high_school_microeconomics": 0,
+    "high_school_mathematics": 0,
+    "jurisprudence": 0,
+    "machine_learning": 0
+  },
+  "strongest": {
+    "high_school_government_and_politics": 100,
+    "high_school_macroeconomics": 100,
+    "high_school_physics": 100,
+    "high_school_us_history": 100,
+    "world_religions": 100
+  }
+}

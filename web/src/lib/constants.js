@@ -1,9 +1,10 @@
 // App-wide constants.
 
-export const DEFAULT_SETTINGS = { model: 'mistral', temperature: 0.7, max_new: 512, use_tools: true, top_k: 3, theme: 'system' }
+export const DEFAULT_SETTINGS = { model: 'fong4', temperature: 0.7, max_new: 512, use_tools: true, top_k: 3, theme: 'system' }
 
 // Shown until /api/info answers; the server's list wins.
 export const FALLBACK_MODELS = [
+  { id: 'fong4', name: 'FongAI 4', detail: 'Our own model · creates images and videos' },
   { id: 'mistral', name: 'FongAI 3.4', detail: 'Smart and fast · creates images and videos' },
   { id: 'fongai', name: 'FongAI 3.2', detail: 'Tiny 64M model trained here · mostly Chinese' },
 ]

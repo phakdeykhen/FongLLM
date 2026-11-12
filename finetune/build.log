@@ -1,28 +1,50 @@
-[1/80] Explain photosynthesis in simple words. -> 734 chars
-[2/80] Write a short poem about the ocean. -> 299 chars
-[3/80] How do I make fried rice? -> 1633 chars
-[4/80] What is the capital of Australia? -> 298 chars
-[5/80] Give me 5 tips to sleep better. -> 1510 chars
-[6/80] Explain what an API is to a beginner. -> 2187 chars
-[7/80] Write a Python function that checks if a number is -> 1018 chars
-[8/80] What causes rain? -> 1385 chars
-[9/80] Summarize the story of Romeo and Juliet. -> 1033 chars
-[10/80] How can I save money each month? -> 2016 chars
-[11/80] Translate 'Good morning, how are you?' into French -> 24 chars
-[12/80] What is the difference between a virus and bacteri -> 1873 chars
-[13/80] Write a polite email asking my manager for a day o -> 821 chars
-[14/80] What is 15% of 240? -> 100 chars
-[15/80] Explain JavaScript promises with an example. -> 1937 chars
-[16/80] Give me a 3-day workout plan for beginners. -> 1273 chars
-[17/80] Why is the sky blue? -> 1091 chars
-[18/80] What are the benefits of drinking water? -> 2112 chars
-[19/80] Write a product description for a bamboo toothbrus -> 2092 chars
-[20/80] How does the internet work, briefly? -> 1925 chars
-[21/80] List 5 famous temples in Cambodia. -> 1421 chars
-[22/80] What is Angkor Wat? -> 1780 chars
-[23/80] Tell me a short funny joke. -> 60 chars
-[24/80] How do I center a div in CSS? -> 1753 chars
-[25/80] What is machine learning? -> 1893 chars
-[26/80] Write a short story for kids about a brave little  -> 1718 chars
-[27/80] How do I start a small online shop? -> 2001 chars
-[28/80] What is inflation? -> 862 chars
+identity=164 replay=80 -> train=224 valid=20
+Loading configuration file finetune/lora_config.yaml
+Loading pretrained model
+Loading datasets
+Training
+[34m╭─[0m[34m [0m[1;35mmlx_lm.lora[0m[34m [0m[34m───────────────────────────────────────────────────────────────────────────────────────────────────────[0m[34m─╮[0m
+[34m│[0m    [39mmodel        [0m   [1mfinetune/base-qwen2.5-7b-4bit[0m                                                                     [34m│[0m
+[34m│[0m    [39mtype         [0m   [1mlora · 16 layers · rank 8[0m                                                                         [34m│[0m
+[34m│[0m    [39mdataset      [0m   [1mfinetune/data[0m                                                                                     [34m│[0m
+[34m│[0m    [39moptimizer    [0m   [1madam · lr 2.0e-05[0m                                                                                 [34m│[0m
+[34m│[0m    [39mbatch · iters[0m   [1m2 · 400[0m                                                                                           [34m│[0m
+[34m│[0m    [39mmax seq      [0m   [1m768[0m                                                                                               [34m│[0m
+[34m╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[0m
+Trainable parameters: 0.151% (11.534M/7615.617M)
+  [1miter   train_loss     tok/s     tokens[0m
+  [38;5;244m   1[0m    [1;35mval[0m [1m1.178[0m    [38;5;244m42.98s[0m
+  [38;5;244m  20[0m    [1;32m1.457 ▼[0m    [1m   28[0m    [38;5;244m  4.5k[0m
+  [38;5;244m  40[0m    [1;32m0.619 ▼[0m    [1m   28[0m    [38;5;244m  9.9k[0m
+  [38;5;244m  60[0m    [1;32m0.481 ▼[0m    [1m   28[0m    [38;5;244m 14.6k[0m
+  [38;5;244m  80[0m    [1;32m0.361 ▼[0m    [1m   31[0m    [38;5;244m 19.7k[0m
+  [38;5;244m 100[0m    [1;35mval[0m [1m0.358[0m    [38;5;244m41.27s[0m
+  [38;5;244m 100[0m    [1;32m0.324 ▼[0m    [1m   29[0m    [38;5;244m 24.6k[0m
+  [1;32msave[0m  [38;5;244m0000100_adapters.safetensors[0m
+  [38;5;244m 120[0m    [1;32m0.264 ▼[0m    [1m   28[0m    [38;5;244m 29.5k[0m
+  [38;5;244m 140[0m    [1;32m0.186 ▼[0m    [1m   24[0m    [38;5;244m 33.0k[0m
+  [38;5;244m 160[0m    [1;33m0.282 ▲[0m    [1m   28[0m    [38;5;244m 38.5k[0m
+  [38;5;244m 180[0m    [1;32m0.210 ▼[0m    [1m   22[0m    [38;5;244m 43.2k[0m
+  [38;5;244m 200[0m    [1;35mval[0m [1m0.331[0m    [38;5;244m43.08s[0m
+  [38;5;244m 200[0m    [1;32m0.206 ▼[0m    [1m   30[0m    [38;5;244m 48.7k[0m
+  [1;32msave[0m  [38;5;244m0000200_adapters.safetensors[0m
+  [38;5;244m 220[0m    [1;32m0.163 ▼[0m    [1m   23[0m    [38;5;244m 52.5k[0m
+  [38;5;244m 240[0m    [1;33m0.171 ▲[0m    [1m   30[0m    [38;5;244m 58.1k[0m
+  [38;5;244m 260[0m    [1;32m0.164 ▼[0m    [1m   24[0m    [38;5;244m 61.9k[0m
+  [38;5;244m 280[0m    [1;33m0.207 ▲[0m    [1m   23[0m    [38;5;244m 67.5k[0m
+  [38;5;244m 300[0m    [1;35mval[0m [1m0.327[0m    [38;5;244m41.94s[0m
+  [38;5;244m 300[0m    [1;32m0.124 ▼[0m    [1m   31[0m    [38;5;244m 72.8k[0m
+  [1;32msave[0m  [38;5;244m0000300_adapters.safetensors[0m
+  [38;5;244m 320[0m    [1;33m0.187 ▲[0m    [1m   30[0m    [38;5;244m 77.9k[0m
+  [38;5;244m 340[0m    [1;32m0.165 ▼[0m    [1m   25[0m    [38;5;244m 83.2k[0m
+  [38;5;244m 360[0m    [1;32m0.152 ▼[0m    [1m   29[0m    [38;5;244m 89.2k[0m
+  [38;5;244m 380[0m    [1;32m0.124 ▼[0m    [1m   22[0m    [38;5;244m 93.6k[0m
+  [38;5;244m 400[0m    [1;35mval[0m [1m0.331[0m    [38;5;244m42.94s[0m
+  [38;5;244m 400[0m    [1;32m0.086 ▼[0m    [1m   23[0m    [38;5;244m 97.2k[0m
+  [1;32msave[0m  [38;5;244m0000400_adapters.safetensors[0m
+[1;34mtrain[0m [34m██████████████████████████████[0m [1;34m100%[0m [38;5;244m·[0m [1;34m  400[0m[38;5;244m/400[0m
+Loading pretrained model
+Dequantizing model
+[?2026h[?25l[1G[?25h[?2026l
+Error: unsupported --quantize "q4_K_M": supported types are int4, int8, nvfp4, mxfp4, mxfp8
+EXIT 1

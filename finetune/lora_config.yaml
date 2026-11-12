@@ -6,8 +6,8 @@ fine_tune_type: lora
 num_layers: 16          # adapt the top 16 of 28 layers
 batch_size: 2
 iters: 400              # ~3 passes over the data
-learning_rate: 1.0e-4
-max_seq_length: 1024
+learning_rate: 2.0e-5   # 1e-4 with scale 20 went NaN at step 1
+max_seq_length: 768     # less memory -> no swap on 16 GB
 grad_checkpoint: true   # trades speed for memory
 mask_prompt: true       # learn only the answers, not the questions
 steps_per_report: 20
@@ -17,5 +17,5 @@ adapter_path: finetune/adapters
 seed: 7
 lora_parameters:
   rank: 8
-  scale: 20.0
+  scale: 2.0             # was 20.0 (diverged to NaN)
   dropout: 0.0

@@ -163,6 +163,13 @@ code { font-family: var(--mono); font-size: .85em; background: var(--code); colo
 .composer.big textarea { min-height: 56px; }
 .composer textarea::placeholder { color: #8a97ae; }
 .composer-row { display: flex; align-items: center; gap: 4px; margin: 8px -4px 0 -8px; }
+.composer-pics { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.composer-pic { position: relative; width: 64px; height: 64px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+.composer-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.composer-pic button { all: unset; position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px;
+  border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff; cursor: pointer; }
+.user-pics { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-bottom: 6px; }
+.user-pics img { max-width: min(220px, 60vw); max-height: 220px; border-radius: 14px; object-fit: cover; border: 1px solid var(--line); }
 .composer-note { color: var(--muted); font-size: .8rem; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .send { all: unset; display: grid; place-items: center; width: 40px; height: 34px; border-radius: 999px; cursor: pointer; margin-left: 4px; color: #fff;
   background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: 0 6px 16px rgba(31, 92, 255, .35); transition: transform .1s, filter .15s; }

@@ -151,7 +151,8 @@ def translate(text, target_language="English"):
         model, tok = _get_translator()
         msg = [{"role": "user", "content": f"Translate the following text into {target_language}. Note that you should "
                                            f"only output the translated result without any additional explanation:\n\n{text}"}]
-        ids = tok.apply_chat_template(msg, add_generation_prompt=True, return_tensors="pt").to(model.device)
+        # transformers 4.57 returns a dict here, so ask for one and take the token ids
+        ids = tok.apply_chat_template(msg, add_generation_prompt=True, return_tensors="pt", return_dict=True)["input_ids"].to(model.device)
         with torch.no_grad():
             out = model.generate(ids, max_new_tokens=max(64, len(text) * 2), do_sample=False, repetition_penalty=1.05)
         return tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True).strip()
