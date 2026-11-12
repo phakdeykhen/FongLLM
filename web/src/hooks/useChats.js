@@ -20,9 +20,12 @@ export default function useChats({ settings, onMedia }) {
     return { ...c, messages: msgs, updated: Date.now() }
   })
 
-  async function send(text) {
+  // `upto` (edit / retry): drop the message at that index and everything after it, then send `text` in its place.
+  async function send(text, upto) {
+    if (busy) return
     let id = currentId
-    const base = chat?.messages || []
+    const cut = (msgs) => (upto == null ? msgs : msgs.slice(0, upto))
+    const base = cut(chat?.messages || [])
     if (!chat) {
       id = newId()
       setChats((cs) => [...cs, { id, title: chatTitle(text), messages: [], updated: Date.now() }])
@@ -31,7 +34,7 @@ export default function useChats({ settings, onMedia }) {
     const history = base.filter((m) => m.content).map(({ role, content }) => ({ role, content }))
     updateChat(id, (c) => ({
       ...c, updated: Date.now(),
-      messages: [...c.messages, { role: 'user', content: text }, { role: 'assistant', content: '', media: [], sources: [] }],
+      messages: [...cut(c.messages), { role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: '', media: [], sources: [] }],
     }))
     setBusy(true)
     setStatus('')

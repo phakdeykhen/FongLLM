@@ -3,11 +3,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Icon from '@/components/ui/Icon.jsx'
 import { MediaView } from '@/components/media/Media.jsx'
+import { timeAgo } from '@/lib/format.js'
 
-function CopyButton({ text }) {
+function CopyButton({ text, label = 'Copy answer' }) {
   const [done, setDone] = useState(false)
   return (
-    <button className="msg-action" title="Copy" aria-label="Copy answer"
+    <button className="msg-action" title="Copy" aria-label={label}
       onClick={() => navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500) })}>
       <Icon name={done ? 'check' : 'copy'} size={15} />
     </button>
@@ -30,7 +31,50 @@ function Sources({ items }) {
   )
 }
 
-export default function ChatView({ chat, busy, status, onOpenImage }) {
+// Your own message: bubble, and on hover the time plus Retry / Edit / Copy. Edit swaps the bubble for a textarea.
+function UserMessage({ m, busy, onEdit }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(m.content)
+  const start = () => { setDraft(m.content); setEditing(true) }
+  const save = () => { const t = draft.trim(); if (!t) return; setEditing(false); onEdit(t) }
+
+  if (editing) {
+    return (
+      <div className="user-row editing">
+        <div className="user-edit">
+          <textarea value={draft} autoFocus rows={Math.min(10, draft.split('\n').length + 1)} aria-label="Edit message"
+            onChange={(e) => setDraft(e.target.value)}
+            onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setEditing(false)
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); save() }
+            }} />
+          <div className="user-edit-actions">
+            <button className="btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn-solid" onClick={save} disabled={!draft.trim() || busy}>Save</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="user-row">
+      <div className="user-bubble">{m.content}</div>
+      <div className="user-actions">
+        {m.at && <span className="msg-time">{timeAgo(m.at)}</span>}
+        <button className="msg-action" title="Retry" aria-label="Retry this message" disabled={busy} onClick={() => onEdit(m.content)}>
+          <Icon name="retry" size={15} />
+        </button>
+        <button className="msg-action" title="Edit" aria-label="Edit this message" disabled={busy} onClick={start}>
+          <Icon name="rename" size={15} />
+        </button>
+        <CopyButton text={m.content} label="Copy message" />
+      </div>
+    </div>
+  )
+}
+
+export default function ChatView({ chat, busy, status, onOpenImage, onEdit }) {
   const end = useRef(null)
   const last = chat.messages[chat.messages.length - 1]
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [chat.messages.length, last?.content, status])
@@ -38,7 +82,7 @@ export default function ChatView({ chat, busy, status, onOpenImage }) {
   return (
     <div className="thread">
       {chat.messages.map((m, i) => m.role === 'user' ? (
-        <div key={i} className="user-row"><div className="user-bubble">{m.content}</div></div>
+        <UserMessage key={i} m={m} busy={busy} onEdit={(text) => onEdit(text, i)} />
       ) : (
         <div key={i} className="assistant">
           <Sources items={m.sources} />

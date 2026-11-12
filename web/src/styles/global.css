@@ -207,7 +207,22 @@ code { font-family: var(--mono); font-size: .85em; background: var(--code); colo
 .ch-toast { position: absolute; top: calc(100% + 10px); right: 16px; padding: 8px 14px; border-radius: 10px; background: var(--text); color: var(--page);
   font-size: .85rem; font-weight: 500; box-shadow: var(--shadow); }
 .thread { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 8px 20px 24px; }
-.user-row { display: flex; justify-content: flex-end; margin: 24px 0 12px; }
+.user-row { display: flex; flex-direction: column; align-items: flex-end; margin: 24px 0 12px; }
+.user-actions { display: flex; align-items: center; gap: 2px; margin-top: 4px; opacity: 0; transition: opacity .15s; }
+.user-row:hover .user-actions, .user-actions:focus-within { opacity: 1; }
+.msg-time { color: var(--muted); font-size: .8rem; margin-right: 6px; }
+.msg-action:disabled { opacity: .4; cursor: default; }
+.user-edit { width: min(100%, 620px); background: var(--card); border: 1px solid var(--accent); border-radius: 18px; padding: 12px 14px 10px;
+  box-shadow: 0 0 0 4px rgba(31, 92, 255, .1); box-sizing: border-box; }
+.user-edit textarea { all: unset; display: block; width: 100%; resize: none; font: inherit; line-height: 1.55; white-space: pre-wrap; color: var(--text); }
+.user-edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.btn-ghost, .btn-solid { all: unset; padding: 6px 14px; border-radius: 9px; font-size: .88rem; font-weight: 500; cursor: pointer; }
+.btn-ghost { color: var(--text); border: 1px solid var(--line); }
+.btn-ghost:hover { background: var(--hover); }
+.btn-solid { background: var(--accent); color: #fff; }
+.btn-solid:disabled { opacity: .45; cursor: default; }
+.btn-ghost:focus-visible, .btn-solid:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: none) { .user-actions { opacity: 1; } }
 .user-bubble { background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff; padding: 10px 16px; border-radius: 18px 18px 4px 18px;
   max-width: 80%; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 6px 18px rgba(31, 92, 255, .22); }
 .assistant { font-size: 1rem; line-height: 1.72; margin-bottom: 8px; color: var(--text); }

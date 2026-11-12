@@ -66,6 +66,7 @@ export default function App() {
     help: () => <HelpPage />,
     home: () => (chats.chat?.messages.length
       ? <ChatPage chat={chats.chat} busy={chats.busy} status={chats.status} composer={composer(false)} onOpenImage={setLightbox}
+          onEdit={(text, i) => chats.send(text, i)}
           actions={{
             onPin: () => chats.togglePin(chats.currentId), onRename: (t) => chats.rename(chats.currentId, t),
             onArchive: () => chats.archive(chats.currentId), onDelete: () => chats.remove(chats.currentId),
