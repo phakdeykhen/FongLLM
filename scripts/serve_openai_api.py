@@ -43,7 +43,7 @@ def init_model(args):
             load_lora(model, f'../{args.save_dir}/{args.lora_weight}_{args.hidden_size}{moe_suffix}.pth')
     else:
         model = AutoModelForCausalLM.from_pretrained(args.load_from, trust_remote_code=True)
-    print(f'MiniMind模型参数量: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
+    print(f'FongAI模型参数量: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
     return model.half().eval().to(device), tokenizer
 
 
@@ -244,7 +244,7 @@ async def chat_completions(request: ChatRequest):
                 "id": f"chatcmpl-{int(time.time())}",
                 "object": "chat.completion",
                 "created": int(time.time()),
-                "model": "minimind",
+                "model": "fongai",
                 "choices": [
                     {
                         "index": 0,
@@ -258,7 +258,7 @@ async def chat_completions(request: ChatRequest):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Server for MiniMind")
+    parser = argparse.ArgumentParser(description="Server for FongAI")
     parser.add_argument('--load_from', default='../model', type=str, help="模型加载路径（model=原生torch权重，其他路径=transformers格式）")
     parser.add_argument('--save_dir', default='out', type=str, help="模型权重目录")
     parser.add_argument('--weight', default='full_sft', type=str, help="权重名称前缀（pretrain, full_sft, dpo, reason, ppo_actor, grpo, spo）")

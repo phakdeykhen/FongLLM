@@ -1,6 +1,6 @@
-"""Voice + document assistant: Whisper (speech->text) -> mxbai (retrieval) -> MiniMind or Mistral (answer).
+"""Voice + document assistant: Whisper (speech->text) -> mxbai (retrieval) -> FongAI or Mistral (answer).
 
-Run:  cd ~/Documents/minimind && source .venv/bin/activate && streamlit run assistant/app.py
+Run:  cd ~/Documents/FongAI && source .venv/bin/activate && streamlit run assistant/app.py
 """
 import io
 import json
@@ -22,11 +22,11 @@ OLLAMA_MODEL = "mistral"
 OWN_CKPT = os.path.join(ROOT, "out", "full_sft_768.pth")
 QUERY_PROMPT = "Represent this sentence for searching relevant passages: "  # mxbai's recommended query prefix
 
-LLM_MINIMIND = "MiniMind-3 (64M, ready-made)"
-LLM_OWN = "MiniMind (your trained full_sft_768.pth)"
+LLM_MINIMIND = "FongAI (64M, ready-made)"
+LLM_OWN = "FongAI (your trained full_sft_768.pth)"
 LLM_MISTRAL = "Mistral 7B Instruct (Ollama)"
 
-st.set_page_config(page_title="MiniMind Voice Assistant", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="FongAI Voice Assistant", page_icon="🎙️", layout="wide")
 
 
 # ---------- model loaders (cached: each loads once per server run) ----------
@@ -37,13 +37,33 @@ def load_whisper():
                     torch_dtype=torch.float16, device=DEVICE)
 
 
+class Embedder:
+    """mxbai-embed-large with CLS pooling (per its 1_Pooling/config.json), loaded via plain transformers
+    because the repo's pinned sentence-transformers 2.3.1 can't parse mxbai's newer pooling config."""
+
+    def __init__(self, path):
+        from transformers import AutoModel, AutoTokenizer
+        self.tok = AutoTokenizer.from_pretrained(path)
+        self.model = AutoModel.from_pretrained(path).half().eval().to(DEVICE)
+
+    @torch.no_grad()
+    def encode(self, texts, normalize_embeddings=True, batch_size=16):
+        out = []
+        for i in range(0, len(texts), batch_size):
+            b = self.tok(texts[i:i + batch_size], padding=True, truncation=True, max_length=512, return_tensors="pt").to(DEVICE)
+            e = self.model(**b).last_hidden_state[:, 0].float()
+            if normalize_embeddings:
+                e = torch.nn.functional.normalize(e, dim=-1)
+            out.append(e.cpu().numpy())
+        return np.concatenate(out)
+
+
 @st.cache_resource(show_spinner="Loading mxbai embeddings...")
 def load_embedder():
-    from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(os.path.join(MODELS, "mxbai-embed-large-v1"), device=DEVICE)
+    return Embedder(os.path.join(MODELS, "mxbai-embed-large-v1"))
 
 
-@st.cache_resource(show_spinner="Loading MiniMind...")
+@st.cache_resource(show_spinner="Loading FongAI...")
 def load_minimind(own: bool):
     from transformers import AutoModelForCausalLM, AutoTokenizer
     if own:
@@ -53,9 +73,10 @@ def load_minimind(own: bool):
         model = MiniMindForCausalLM(MiniMindConfig(hidden_size=768, num_hidden_layers=8))
         model.load_state_dict(torch.load(OWN_CKPT, map_location="cpu"), strict=True)
     else:
-        path = os.path.join(MODELS, "minimind-3")
+        path = os.path.join(MODELS, "fongai-3") if os.path.isdir(os.path.join(MODELS, "fongai-3")) else os.path.join(MODELS, "minimind-3")
         tok = AutoTokenizer.from_pretrained(path)
-        model = AutoModelForCausalLM.from_pretrained(path)
+        # eager attention: torch 2.6's fused SDPA crashes on MPS with grouped-query attention (8 q / 4 kv heads)
+        model = AutoModelForCausalLM.from_pretrained(path, attn_implementation="eager")
     return model.half().eval().to(DEVICE), tok
 
 
@@ -132,7 +153,7 @@ def answer_minimind(messages, own: bool, temperature: float, max_new_tokens: int
 
 def answer_mistral(messages, temperature: float, max_new_tokens: int):
     r = requests.post(f"{OLLAMA_URL}/api/chat", stream=True, timeout=600, json={
-        "model": OLLAMA_MODEL, "messages": messages, "stream": True,
+        "model": OLLAMA_MODEL, "messages": [{"role": "system", "content": "You are FongAI, a helpful assistant."}] + messages, "stream": True,
         "options": {"temperature": temperature, "num_predict": max_new_tokens}})
     r.raise_for_status()
     for line in r.iter_lines():
@@ -142,8 +163,8 @@ def answer_mistral(messages, temperature: float, max_new_tokens: int):
 
 
 # ---------- UI ----------
-st.title("🎙️ Voice + Docs Assistant")
-st.caption(f"Whisper large-v2 → mxbai-embed-large → MiniMind / Mistral · device: {DEVICE}")
+st.title("🎙️ FongAI Voice + Docs Assistant")
+st.caption(f"Whisper large-v2 → mxbai-embed-large → FongAI / Mistral · device: {DEVICE}")
 
 with st.sidebar:
     st.header("Answer model")
@@ -152,7 +173,7 @@ with st.sidebar:
     if llm == LLM_MISTRAL and not ollama_ok():
         st.error("Ollama isn't running or `mistral` isn't pulled. Run: `brew services start ollama && ollama pull mistral`")
     if llm != LLM_MISTRAL:
-        st.caption("MiniMind is a tiny model trained mostly on Chinese; expect simple answers.")
+        st.caption("FongAI is a tiny model trained mostly on Chinese; expect simple answers.")
     temperature = st.slider("Temperature", 0.0, 1.5, 0.7, 0.05)
     max_new = st.slider("Max answer tokens", 64, 2048, 512, 64)
 

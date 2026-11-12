@@ -15,7 +15,7 @@ from trainer.trainer_utils import safe_math_eval
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from media_tools import MEDIA_TOOLS, execute_media_tool
 
-st.set_page_config(page_title="MiniMind", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="FongAI", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
@@ -85,7 +85,7 @@ LANG_TEXTS = {
         'thinking': '思考',
         'tools': '工具',
         'language': '语言',
-        'send': '给 MiniMind 发送消息',
+        'send': '给 FongAI 发送消息',
         'disclaimer': 'AI 生成内容可能存在错误，请仔细核实',
         'think_tip': '自适应思考，目前多轮对话或Tool Call共存时思考不稳定',
         'tool_select': '工具选择（最多4个）',
@@ -99,7 +99,7 @@ LANG_TEXTS = {
         'thinking': 'Thinking',
         'tools': 'Tools',
         'language': 'Language',
-        'send': 'Send a message to MiniMind',
+        'send': 'Send a message to FongAI',
         'disclaimer': 'AI-generated content may be inaccurate, please verify',
         'think_tip': 'Adaptive thinking; may be unstable with multi-turn or Tool Call',
         'tool_select': 'Tool Selection (max 4)',
@@ -391,7 +391,7 @@ def main():
         setup_seed(random_seed)
 
         tools = [t for t in TOOLS if t['function']['name'] in st.session_state.get('selected_tools', [])] or None
-        sys_prompt = [] if tools else [{"role": "system", "content": "你是MiniMind，一个乐于助人、知识渊博的AI助手。请用完整且友好的方式回答用户问题。"}]
+        sys_prompt = [] if tools else [{"role": "system", "content": "你是FongAI，一个乐于助人、知识渊博的AI助手。请用完整且友好的方式回答用户问题。"}]
         st.session_state.chat_messages = sys_prompt + st.session_state.chat_messages[-(st.session_state.history_chat_num + 1):]
         template_kwargs = {"tokenize": False, "add_generation_prompt": True}
         if st.session_state.get('enable_thinking', False):
