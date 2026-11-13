@@ -2,6 +2,15 @@ import { useState } from 'react'
 import Icon from '@/components/ui/Icon.jsx'
 import { GOOGLE_APP, saveToGoogle } from '@/lib/google.js'
 
+// A file FongAI made (PDF, Word, Excel, PowerPoint, React, HTML): a card in the chat and a preview panel on the right.
+const KIND_ICON = { pdf: 'doc', docx: 'doc', xlsx: 'sheet', pptx: 'slides', react: 'fileCode', html: 'fileCode' }
+const EXT = { pdf: 'PDF', docx: 'DOCX', xlsx: 'XLSX', pptx: 'PPTX', react: 'JSX', html: 'HTML' }
+
+function size(bytes) {
+  if (!bytes) return ''
+  return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`
+}
+
 // Google files made from FongAI's files, remembered so a second click opens the same sheet: { file url: sheet url }
 function savedSheets() {
   try { return JSON.parse(localStorage.getItem('gsheets') || '{}') } catch { return {} }
