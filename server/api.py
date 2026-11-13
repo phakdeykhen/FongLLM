@@ -285,7 +285,10 @@ ICON_ASK = re.compile(r"\b(logo|icon|app icon|favicon|emblem|badge)s?\b|ឡូ�
 
 
 FILE_EDIT = re.compile(r"\b(change|edit|update|fix|add|remove|delete|replace|set|make|put|move|rename|translate|shorten|"
-                       r"expand|instead|more|less|bigger|smaller)\b|កែ|ប្តូរ|修改|改", re.I)
+                       r"expand|instead|more|less|bigger|smaller|error|errors|bug|broken|wrong|work|working)\b|កែ|ប្តូរ|修改|改", re.I)
+
+
+FIX_TRIES = 3   # how many times the model may repair code that fails the check
 
 
 def file_events(kind, ask, history, model_id, revise=False):
@@ -301,37 +304,74 @@ def file_events(kind, ask, history, model_id, revise=False):
     label = file_tools.KINDS[kind]["label"]
     verb = "Updating" if revise else "Writing"
     yield {"type": "status", "text": f"{verb} your {label} file..."}
-    words, live = [], {"text": ""}
+    # requirement documents the user uploaded: the parts that match this request go into the prompt
+    context = ""
+    if not revise and STORE.passages():
+        yield {"type": "status", "text": "Reading your documents..."}
+        query = " ".join([ask] + [m["content"] for m in history[-4:] if m["role"] == "user"])[:1000]
+        hits = [h for h in retrieve(query + " features requirements modules", 12) if h["score"] >= 0.3]
+        if hits:
+            yield {"type": "sources", "items": hits}
+            context = "\n\n".join(f"[{h['source']}] {h['text']}" for h in hits)[:7000]
+        yield {"type": "status", "text": f"{verb} your {label} file..."}
 
-    def progress(n, text=""):
-        words.append(n)
-        live["text"] = text
-    import threading
-    out, err = {}, {}
+    def stream(status, fix=None):
+        """Runs write_source in a thread, streaming the code into the side panel. Sets box["src"]."""
+        words, live = [], {"text": ""}
 
-    def work():
-        try:
-            out["src"] = file_tools.write_source(kind, ask, OLLAMA_URL, name, history, revise, progress)
-        except Exception as e:   # noqa: BLE001
-            err["e"] = e
-    t = threading.Thread(target=work)
-    t.start()
-    shown, sent = 0, 0
-    while t.is_alive():
-        t.join(0.5)
-        text = live["text"]
-        if len(text) > sent:   # the code so far, streamed into the side panel while it's written
-            yield {"type": "code", "kind": kind, "label": label, "delta": text[sent:]}
-            sent = len(text)
-        if words and words[-1] != shown:
-            shown = words[-1]
-            yield {"type": "status", "text": f"{verb} your {label} file... {shown} words"}
-    if err:
-        raise err["e"]
-    src = out.get("src", "").strip()
+        def progress(n, text=""):
+            words.append(n)
+            live["text"] = text
+        import threading
+        out, err = {}, {}
+
+        def work():
+            try:
+                out["src"] = file_tools.write_source(kind, ask, OLLAMA_URL, name, history, revise, progress,
+                                                     context=context, fix=fix)
+            except Exception as e:   # noqa: BLE001
+                err["e"] = e
+        t = threading.Thread(target=work)
+        t.start()
+        if fix:
+            yield {"type": "code_reset"}
+        shown, sent = 0, 0
+        while t.is_alive():
+            t.join(0.5)
+            text = live["text"]
+            if len(text) > sent:   # the code so far, streamed into the side panel while it's written
+                yield {"type": "code", "kind": kind, "label": label, "delta": text[sent:]}
+                sent = len(text)
+            if words and words[-1] != shown:
+                shown = words[-1]
+                yield {"type": "status", "text": f"{status}... {shown} words"}
+        if err:
+            raise err["e"]
+        box["src"] = out.get("src", "").strip()
+
+    box = {}
+    first_fix = None
+    if revise and file_tools.LAST and re.search(r"\b(error|errors|fix|bug|broken|wrong|work|working)\b", ask, re.I):
+        found = file_tools.check_source(kind, file_tools.LAST["source"])
+        if found:   # "error" / "it doesn't work": repair with the real compiler message, not a guess
+            first_fix = (file_tools.LAST["source"], found)
+    yield from stream(f"{'Fixing' if first_fix else verb} your {label} file", fix=first_fix)
+    src = box["src"]
     if not src:
         yield {"type": "error", "text": "The model returned nothing. Please try again."}
         return
+    # check the code and let the model repair it until it compiles (no emoji, not cut off)
+    problem = None
+    for attempt in range(1, FIX_TRIES + 1):
+        problem = file_tools.check_source(kind, src)
+        if not problem:
+            break
+        print(f"[file] fix {attempt}: {problem[:200]}", flush=True)
+        yield {"type": "status", "text": f"Found a problem, fixing it (try {attempt}/{FIX_TRIES})"}
+        yield from stream(f"Fixing it (try {attempt}/{FIX_TRIES})", fix=(src, problem))
+        src = box["src"] or src
+    else:
+        problem = file_tools.check_source(kind, src)
     yield {"type": "status", "text": f"Building the {label} file..."}
     # "Do the same as a Google Sheet" / "please create now": name it after the real request, "Title: kimi" -> "kimi"
     named = FOLLOW_TITLE.match(ask)
@@ -344,6 +384,9 @@ def file_events(kind, ask, history, model_id, revise=False):
     what = "updated" if revise else "made"
     yield {"type": "text", "delta": f"I {what} **{item['title']}** as {'an' if label[0] in 'AEIOU' else 'a'} {label} file. {file_tools.FILE_MARK}, "
                                     "or download it. Want changes? Just tell me what to change."}
+    if problem:
+        yield {"type": "text", "delta": f"\n\nI tried {FIX_TRIES} times but one problem is left: {problem[:300]} "
+                                        "Say **fix it** and I'll try again."}
     asked_google = [ask] + [m["content"] for m in history[-6:] if m["role"] == "user"]
     if any(file_tools.GOOGLE_ASK.search(t) for t in asked_google):
         app = {"xlsx": "Google Sheets", "docx": "Google Docs", "pptx": "Google Slides"}.get(kind, "Google Drive")

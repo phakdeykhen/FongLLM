@@ -65,6 +65,7 @@ export default function useChats({ settings, onMedia, onFile }) {
         else if (ev.type === 'progress') setProgress({ kind: ev.kind, value: ev.value })
         else if (ev.type === 'sources') patchLast(id, (m) => ({ ...m, sources: ev.items }))
         else if (ev.type === 'media') { gotMedia = true; setProgress(null); patchLast(id, (m) => ({ ...m, media: [...(m.media || []), ev.item] })) }
+        else if (ev.type === 'code_reset') draft = ''   // the model is rewriting the file to fix an error
         else if (ev.type === 'code') {
           draft += ev.delta
           onFile?.({ streaming: true, kind: ev.kind, label: ev.label, title: 'Writing…', name: 'draft', code: draft, chatId: id })

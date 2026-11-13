@@ -75,10 +75,16 @@ PROMPTS = {
              "Then each slide starts with '## Slide title' followed by 3-5 bullet points '- ...' (short, max 12 words each). "
              "Make 6-10 slides. Output ONLY the Markdown."),
     "react": ("Write ONE self-contained React component file for the request below. Use `export default function App()`. "
-              "Only import from 'react' (useState, useEffect, ...). No other libraries, no CSS files: put styles in a "
-              "<style> tag inside the JSX or in inline style objects. Make it look modern and polished. Output ONLY the code."),
+              "Import hooks from 'react' (useState, useEffect, ...). For icons import from 'lucide-react' "
+              "(e.g. import { Users, Briefcase, Search, Bell, Settings, ChevronRight } from 'lucide-react'; use <Users size={20} />). "
+              "NEVER use emoji anywhere: always a lucide icon instead. No other libraries, no CSS files: put styles in ONE "
+              "<style>{`...`}</style> block or inline style objects; keep CSS short. Use realistic sample data in arrays. "
+              "Keep the whole file under 300 lines and make sure it is COMPLETE: every tag, brace and function closed, "
+              "ending with the closing of App. Make it look modern and polished. Output ONLY the code."),
     "html": ("Write ONE complete self-contained HTML file for the request below, with any extra CSS in a <style> tag and any "
-             "JS in a <script> tag. Make it modern, polished and responsive. Output ONLY the HTML.\n\n"
+             "JS in a <script> tag. Make it modern, polished and responsive. NEVER use emoji: for icons write <i data-lucide=\"name\"></i> "
+             "with a Lucide icon name (users, briefcase, search, mail, phone, star, check, rocket, ...); the icon script is added for you. "
+             "Output ONLY the HTML.\n\n"
              "A design kit stylesheet is added for you automatically: do NOT link any stylesheet and do NOT write CSS for the "
              "classes below (they are already styled); only set the brand color. For websites and landing pages, build "
              "the page from these classes so it looks professional:\n"
@@ -88,7 +94,7 @@ PROMPTS = {
              "<p class=\"lead\">...</p><a class=\"btn\">...</a> <a class=\"btn btn-outline\">...</a></div><img class=\"hero-img\" "
              "src=\"...\"></div></header>\n"
              "- <section class=\"section\" id=\"...\"><div class=\"container\"><span class=\"eyebrow\">...</span><h2>...</h2>"
-             "<p class=\"lead\">...</p><div class=\"grid\"><div class=\"card\"><div class=\"icon\">emoji</div><h3>...</h3><p>...</p></div>"
+             "<p class=\"lead\">...</p><div class=\"grid\"><div class=\"card\"><div class=\"icon\"><i data-lucide=\"rocket\"></i></div><h3>...</h3><p>...</p></div>"
              "...</div></div></section>  (use class=\"section section-alt\" on every other section)\n"
              "- numbers: <div class=\"stats\"><div class=\"stat\"><b>15+</b><span>Years</span></div>...</div>\n"
              "- team: <div class=\"grid\"><div class=\"card person\"><img src=\"...\"><h3>Name</h3><p>Role</p></div>...</div>\n"
@@ -159,6 +165,8 @@ KIT_JS = ("<script>addEventListener('error',function(e){var i=e.target;if(i.tagN
           "i.dataset.kitFail=1;i.alt='';i.src='data:image/svg+xml,'+encodeURIComponent(\"<svg xmlns='http://www.w3.org/2000/svg' "
           "width='900' height='650'><defs><linearGradient id='g' x2='1' y2='1'><stop stop-color='#2563eb'/><stop offset='1' "
           "stop-color='#93c5fd'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/></svg>\")},true)</script>")
+LUCIDE_JS = ("<script src='https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js'></script>"
+             "<script>window.lucide&&lucide.createIcons()</script>")
 KIT_PAGE = re.compile(r"class=[\"'][^\"']*\b(hero|nav|section|card)\b", re.I)
 
 
@@ -185,6 +193,8 @@ def with_kit(page):
     first, so the page's own CSS wins."""
     page = re.sub(r"<link[^>]+href=[\"'][^\"']*(design-?kit|kit\.css)[^\"']*[\"'][^>]*>\s*", "", page, flags=re.I)
     tag = f"<style>{KIT_CSS}</style>{KIT_JS}"
+    if "data-lucide" in page and "lucide.createIcons" not in page:
+        page = re.sub(r"</body>", lambda m: LUCIDE_JS + m.group(0), page, count=1, flags=re.I) if re.search(r"</body>", page, re.I) else page + LUCIDE_JS
     if KIT_PAGE.search(page) and re.search(r"</head>", page, re.I):
         return re.sub(r"</head>", lambda m: tag + m.group(0), page, count=1, flags=re.I)
     if re.search(r"<head[^>]*>", page, re.I):
@@ -197,23 +207,44 @@ REVISE = ("Here is the current {label} source, between <<< and >>>:\n<<<\n{sourc
 def strip_fences(text):
     m = re.search(r"```[\w+-]*\n(.*?)```", text, re.S)
     text = (m.group(1) if m else text).strip()
+    text = re.sub(r"^```[\w+-]*\s*\n", "", text)   # opening fence never closed (the reply was cut off)
+    text = re.sub(r"\n```\s*$", "", text)
     # when updating a file the model sometimes copies the <<< >>> markers that wrapped the old version
     return re.sub(r"^\s*(<<<|>>>)\s*$\n?", "", text, flags=re.M).strip()
 
 
-def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_progress=None):
-    """Asks the Ollama model for the file's source text. on_progress(words, text_so_far) is called while it writes."""
+FIX = ("This {label} code does not work. Problem: {error}\n\nThe code, between <<< and >>>:\n<<<\n{source}\n>>>\n\n"
+       "Output the FULL corrected file, complete from the first import to the last closing brace. Keep the same features "
+       "and design. {extra}Output ONLY the code.")
+
+
+def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_progress=None, context="", fix=None):
+    """Asks the Ollama model for the file's source text. on_progress(words, text_so_far) is called while it writes.
+    context: passages from the user's uploaded documents. fix: (broken_source, error) to repair."""
     import requests
-    if revise and LAST:
+    if fix:
+        src, error = fix
+        cut = "cut off" in error
+        user = FIX.format(label=KINDS[kind]["label"], error=error, source=src[-6000:] if cut else src,
+                          extra=("It was cut off because it was too long: rewrite the WHOLE file shorter (under 250 lines, "
+                                 "less CSS, fewer sections) so it finishes. " if cut else "")
+                          + ("Icons come from 'lucide-react' or <i data-lucide>; never emoji. "))
+        if cut:
+            user += "\n\nOriginal request: " + ask
+    elif revise and LAST:
         user = REVISE.format(label=KINDS[kind]["label"], source=LAST["source"]) + "\n\nUser's change: " + ask
     else:
         user = PROMPTS[kind] + "\n\nRequest: " + ask
+    if context and not fix:
+        user += ("\n\nThe user uploaded these requirement documents. Build what they describe (features, modules, "
+                 "names, fields, wording):\n" + context)
+    code = kind in ("react", "html")
     msgs = [{"role": "system", "content": "You are Fong AI. You write files exactly in the format asked, nothing else."}]
     msgs += [m for m in history if m["role"] == "user"][-2:] + [{"role": "user", "content": user}]
     r = requests.post(f"{ollama_url}/api/chat", stream=True, timeout=900, json={
         "model": model, "messages": msgs, "stream": True,
         **({"think": False} if model.startswith("fong-code") else {}),   # Bonsai 2: skip the long hidden reasoning
-        "options": {"temperature": 0.3, "num_predict": 4096, "num_ctx": 8192}})
+        "options": {"temperature": 0.3, "num_predict": 7000 if code else 4096, "num_ctx": 12288 if code else 8192}})
     r.raise_for_status()
     out, last = "", 0
     for line in r.iter_lines():
@@ -223,6 +254,34 @@ def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_prog
                 last = time.time()
                 on_progress(len(out.split()), out)
     return strip_fences(out)
+
+
+# ---------- checking generated code before the user sees it ----------
+ESBUILD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "node_modules", ".bin", "esbuild")
+EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\U0001F900-\U0001F9FF\u2B50\u2B06\u2194-\u21AA]")
+
+
+def check_source(kind, src):
+    """None if the code looks good, else a short problem description the model can fix."""
+    import subprocess
+    if kind == "react":
+        if os.path.exists(ESBUILD):
+            r = subprocess.run([ESBUILD, "--loader=jsx", "--log-level=error", "--color=false"], input=src,
+                               capture_output=True, text=True, timeout=30)
+            if r.returncode:
+                err = re.sub(r"\s+", " ", r.stderr).strip()[:600]
+                end = re.search(r"Unexpected end of file|Expected .* but found end of file", err)
+                return ("The file was cut off before the end. " if end else "Syntax error: ") + err
+        if not re.search(r"export\s+default", src):
+            return "There is no `export default function App()`."
+    elif kind == "html":
+        if not re.search(r"</html>\s*$", src, re.I):
+            return "The file was cut off before </html>."
+    if kind in ("react", "html"):
+        found = sorted(set(EMOJI.findall(src)))
+        if found:
+            return "It uses emoji (" + " ".join(found[:8]) + "). Replace every emoji with a Lucide icon."
+    return None
 
 
 # ---------- Markdown helpers ----------
@@ -455,6 +514,10 @@ def slides_to_html(title, subtitle, slides):
 
 def react_preview(code):
     """Runs the component in the browser: React + Babel from a CDN, imports/exports stripped."""
+    def lucide(m):
+        names = [n.strip().split(" as ") for n in m.group(1).split(",") if n.strip()]
+        return "".join(f"const {(n[-1]).strip()}=LucideReact['{n[0].strip()}']||LucideReact.Circle;" for n in names)
+    code = re.sub(r"^\s*import\s*\{([^}]*)\}\s*from\s*['\"]lucide-react['\"];?\s*$", lucide, code, flags=re.M)
     body = re.sub(r"^\s*import\s[^;]*?from\s+['\"][^'\"]+['\"];?\s*$", "", code, flags=re.M)
     body = re.sub(r"^\s*import\s+['\"][^'\"]+['\"];?\s*$", "", body, flags=re.M)
     body = re.sub(r"export\s+default\s+function\s+(\w+)", r"function \1", body)
@@ -465,6 +528,8 @@ def react_preview(code):
     return ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<script src='https://unpkg.com/react@18.3.1/umd/react.development.js'></script>"
             "<script src='https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js'></script>"
+            "<script>window.react=window.React</script>"
+            "<script src='https://unpkg.com/lucide-react@0.468.0/dist/umd/lucide-react.min.js'></script>"
             "<script src='https://unpkg.com/@babel/standalone@7.26.4/babel.min.js'></script>"
             "<style>body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif}#err{color:#b91c1c;white-space:pre-wrap;"
             "font:13px ui-monospace,monospace;padding:16px}</style></head><body><div id='root'></div><pre id='err'></pre><script>"
