@@ -58,6 +58,6 @@ export function googleLogin(credential) {
   return fetch('/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) }).then(json)
 }
 
-export function makeImage(prompt) {
-  return fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) }).then(json)
+export function makeImage(prompt, hd = false) {
+  return fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, hd }) }).then(json)
 }

@@ -3,7 +3,10 @@ MiniMind 多模态生成工具：让 LLM 通过 tool call 调用扩散模型生�
 Image/video generation tools that MiniMind can call via <tool_call>.
 
 模型在首次调用时懒加载（首次会从 HuggingFace 下载权重）。可用环境变量覆盖：
-  MINIMIND_IMAGE_MODEL  默认 stabilityai/sdxl-turbo          (~7GB, 1-4 步出图)
+  MINIMIND_IMAGE_MODEL  Fast 模式默认 stabilityai/sdxl-turbo (~7GB, 512x512, 秒级)。
+                        HD 模式 (IMAGE_HD=True, app 每次请求设置) 用 .venv-flux 里的 FLUX.1-schnell 4-bit (1024x1024, 分钟级)。
+                        Set to "flux" to make HD the default.
+  MINIMIND_FLUX_MODEL   默认 mflux-community/flux-1-schnell-mflux-q4 (~6GB, Apache-2.0)
   MINIMIND_VIDEO_MODEL  默认自动选择：
                         内存 <24GB 且无 CUDA → ByteDance/AnimateDiff-Lightning (+ SD1.5 底模, ~5GB, 4 步出片)
                         否则 → Wan-AI/Wan2.1-T2V-1.3B-Diffusers (~29GB; umT5-XXL 文本编码器单独就要 ~11GB 内存)
@@ -17,7 +20,17 @@ import time
 import threading
 import torch
 
-IMAGE_MODEL = os.environ.get("MINIMIND_IMAGE_MODEL", "stabilityai/sdxl-turbo")
+import re
+import subprocess
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+FLUX_BIN = os.path.join(_ROOT, ".venv-flux", "bin", "mflux-generate")   # separate env: mflux needs huggingface-hub>=1.x
+FLUX_MODEL = os.environ.get("MINIMIND_FLUX_MODEL", "mflux-community/flux-1-schnell-mflux-q4")
+_IMG_ENV = os.environ.get("MINIMIND_IMAGE_MODEL", "")
+IMAGE_MODEL = _IMG_ENV if _IMG_ENV and _IMG_ENV.lower() != "flux" else "stabilityai/sdxl-turbo"   # the fast model
+FLUX_AVAILABLE = os.path.exists(FLUX_BIN)
+# Fast = sdxl-turbo 512px (seconds). HD = FLUX 1024px (minutes, much better). The app sets this per request.
+IMAGE_HD = _IMG_ENV.lower() == "flux"
 
 
 def _total_ram_gb():
@@ -170,10 +183,60 @@ def _fit(image, longest=768):
     return image.convert("RGB").resize((max(256, int(w * k) // 8 * 8), max(256, int(h * k) // 8 * 8)))
 
 
-def generate_image(prompt, steps=None, width=512, height=512, progress=None, init_image=None, strength=0.6):
+def _generate_image_flux(prompt, steps, width, height, report, init_image, strength):
+    """FLUX.1-schnell (4-bit, MLX) in its own process; the memory is fully returned when it exits."""
+    steps = steps or 4
+    path = _out_path("image", "png")
+    cmd = [FLUX_BIN, "--model", FLUX_MODEL, "--base-model", "schnell", "--low-ram", "--steps", str(steps),
+           "--prompt", prompt, "--output", path, "--seed", str(int(time.time()) % 100000)]
+    tmp = None
+    if init_image is not None:
+        init_image = _fit(init_image, longest=1024)
+        width, height = init_image.size
+        tmp = _out_path("input", "png")
+        init_image.save(tmp)
+        # mflux strength = how much of the original to keep; ours = how much to change
+        cmd += ["--image-path", tmp, "--image-strength", str(round(1 - strength, 2))]
+    cmd += ["--width", str(width // 16 * 16), "--height", str(height // 16 * 16)]
+    report(0.05, 0.4)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    buf, tail = b"", []
+    while True:
+        ch = proc.stdout.read(1)
+        if not ch:
+            break
+        if ch in b"\r\n":
+            line = buf.decode(errors="ignore")
+            m = re.search(r"(\d+)/(\d+) \[", line)
+            if m and int(m.group(2)) == steps:
+                done = int(m.group(1)) / steps
+                report(0.4 + 0.55 * done, min(0.95, 0.5 + 0.5 * done))
+            if line.strip():
+                tail = (tail + [line])[-5:]
+            buf = b""
+        else:
+            buf += ch
+    proc.wait()
+    if tmp and os.path.exists(tmp):
+        os.remove(tmp)
+    if proc.returncode != 0 or not os.path.exists(path):
+        raise RuntimeError("FLUX image generation failed: " + " | ".join(tail))
+    report(1.0, 1.0)
+    return path
+
+
+def generate_image(prompt, steps=None, width=None, height=None, progress=None, init_image=None, strength=0.6):
     """progress(floor, cap): reports how far along it is (0-1); the caller eases from floor toward cap.
-    init_image (PIL): edit that picture instead of starting from noise (keeps its layout and colors)."""
+    init_image (PIL): edit that picture instead of starting from noise (keeps its layout and colors).
+    Default size: 1024x1024 with FLUX, 512x512 with sdxl-turbo."""
     report = progress or (lambda floor, cap: None)
+    if FLUX_AVAILABLE and IMAGE_HD:
+        with _lock:
+            _unload_except(None)   # 16GB: free any torch diffusion model before FLUX starts
+            st = time.time()
+            path = _generate_image_flux(prompt, steps, width or 1024, height or 1024, report, init_image, strength)
+        return {"type": "image", "path": path, "prompt": prompt, "seconds": round(time.time() - st, 1)}
+    width, height = width or 512, height or 512
     with _lock:
         report(0.02, 0.35 if "image" not in _pipes else 0.1)
         pipe = _get_image_pipe()

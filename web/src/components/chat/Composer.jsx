@@ -24,7 +24,7 @@ function shrink(f) {
   })
 }
 
-export default function Composer({ big, busy, onSend, onStop, models, model, onModel, onDocs, autoFocus }) {
+export default function Composer({ big, busy, onSend, onStop, models, model, onModel, onDocs, autoFocus, hd, onHd }) {
   const [text, setText] = useState('')
   const [note, setNote] = useState('')
   const [recording, setRecording] = useState(null) // stop() function while recording
@@ -138,6 +138,12 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
           onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
         {note && <span className="composer-note">{note}</span>}
         <div className="grow" />
+        {onHd && (
+          <button className={`hd-btn ${hd ? 'on' : ''}`} onClick={() => onHd(!hd)} aria-pressed={!!hd}
+            title={hd ? 'HD images: FLUX 1024px, better but takes minutes. Click for Fast.' : 'Fast images: about 5 seconds, 512px. Click for HD (better, takes minutes).'}>
+            <Icon name={hd ? 'sparkles' : 'zap'} size={14} />{hd ? 'HD' : 'Fast'}
+          </button>
+        )}
         {current && (
           <div className="model-pick" onClick={(e) => e.stopPropagation()}>
             <button className="model-btn" onClick={() => setMenu(!menu)} aria-haspopup="listbox" aria-expanded={menu}>

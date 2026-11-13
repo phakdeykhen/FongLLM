@@ -28,7 +28,7 @@ from threading import Lock, Thread
 import numpy as np
 import requests
 import torch
-from PIL import Image
+from PIL import Image, ImageFilter
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +38,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 from media_tools import MEDIA_DIR, MEDIA_TOOLS, _out_path, execute_media_tool, translate  # noqa: E402
 import poster_text  # noqa: E402
+import promo_poster  # noqa: E402
+import file_tools  # noqa: E402
+import media_tools  # noqa: E402
 
 MODELS = os.environ.get("MINIMIND_ASSISTANT_MODELS", os.path.join(ROOT, "assistant", "models"))
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -109,6 +112,77 @@ Rules:
   asking for the new text."""
 POSTER_PLAN_MODEL = os.environ.get("POSTER_PLAN_MODEL", VISION_MODEL)   # Qwen follows these rules far better than Mistral
 REMOVE_ASK = re.compile(r"\b(remove|delete|erase|drop|get rid of|without)\b|លុប|删", re.I)
+# "create a promotion for this set, $10 only" + a product photo: build a sale poster around the real product
+PROMO_ASK = re.compile(r"\b(promo(tion)?s?|sale|offer|discount|deal|advert\w*|ads?|marketing|price)\b|\$\s?\d|\d\s?\$|"
+                       r"ប្រូម៉ូសិន|ផ្សព្វផ្សាយ|តម្លៃ|促销|优惠|广告", re.I)
+CREATE_VERB = re.compile(r"\b(create|make|design|generate|build|do|need|want)\b|បង្កើត|ធ្វើ|做|设计|生成", re.I)
+# a short "yes" to an offer ("yes please", "ok do it"); "Please create a POS app" is a new request, not a yes
+YES = re.compile(r"^\s*((yes|yeah|yep|ok(ay)?|sure|go ahead|do it|let'?s (go|do it)|ចាស|បាទ)\b[\s,.!]*(please|pls|do it|go ahead|thanks?)?[\s.!]*$"
+                 r"|please[\s.!]*$|(好|好的|可以)[\s。！!]*$)", re.I)
+OFFERED_VISUAL = re.compile(r"\b(visual|image|poster|picture|design|flyer|banner)\b", re.I)
+PRODUCT_READER = """This photo shows a product the user wants to promote. The user said: {ask}
+Earlier in the chat:
+{earlier}
+
+Reply with JSON only:
+{{"title": "brand + product name for the poster headline, max 5 words, e.g. ANUA Heartleaf Skincare Set",
+  "headline": "short offer label without the price, max 3 words, e.g. SPECIAL OFFER",
+  "tagline": "one short benefit line, max 8 words",
+  "items": ["short names of the separate products, max 6, max 4 words each, copied from the labels or from the earlier
+             chat; [] for a single product or when you can't read them"],
+  "price": "the price the user gave, exactly as written, or empty",
+  "cta": "call to action, max 3 words, e.g. Order now"}}
+Only use brand names you can actually read on the photo. Never invent a price or discount.
+Write title, headline, tagline, items and cta in the user's language."""
+
+
+def read_product(image_b64, ask, earlier):
+    """Vision model -> poster wording for the product photo ({} if it fails)."""
+    body = {"model": VISION_MODEL, "stream": False, "format": "json", "options": {"temperature": 0.2, "num_predict": 400},
+            "messages": [{"role": "user", "content": PRODUCT_READER.format(ask=ask, earlier="\n".join(earlier) or "-"),
+                          "images": [image_b64]}]}
+    try:
+        r = requests.post(f"{OLLAMA_URL}/api/chat", json=body, timeout=300)
+        r.raise_for_status()
+        info = json.loads(r.json()["message"]["content"])
+        return info if isinstance(info, dict) else {}
+    except Exception:
+        return {}
+
+
+def promo_events(image_b64, ask, history):
+    """Sale poster from the user's own product photo: the product is cut out (never redrawn), the words are typeset
+    in a real font, and the image model only paints the empty backdrop. history: recent messages (an earlier reply
+    may already list the set's products by name)."""
+    yield {"type": "status", "text": "Reading your product..."}
+    said = [m["content"] for m in history if m["role"] == "user"][-3:]
+    info = read_product(image_b64, ask, [f"{m['role']}: {m['content'][:700]}" for m in history[-4:]])
+    unload_ollama()   # free the vision model before the image model loads (16GB)
+    text = lambda k: str(info.get(k) or "").strip()
+    price = promo_poster.find_price(ask) or promo_poster.find_price(" ".join(reversed(said))) or text("price")
+    photo = Image.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
+    backdrop = None
+    result = yield from run_tool("generate_image", {"prompt": promo_poster.backdrop_prompt(photo)}, show=False)
+    if "path" in result:
+        backdrop = Image.open(result["path"]).filter(ImageFilter.GaussianBlur(4))   # reads as depth of field
+    yield {"type": "status", "text": "Laying out your poster..."}
+    items = [str(i).strip() for i in info.get("items") or [] if str(i).strip()]
+    headline = text("headline")
+    if not headline or re.search(r"\d", headline):   # the price has its own badge; don't print it twice
+        headline = "SPECIAL OFFER"
+    out = promo_poster.make_poster(photo, title=text("title"), price=price, headline=headline,
+                                   tagline=text("tagline"), items=items if len(items) > 1 else [],
+                                   cta=text("cta") or "Order now", backdrop=backdrop)
+    path = _out_path("image", "png")
+    out.save(path)
+    yield {"type": "status", "text": ""}
+    yield {"type": "media", "item": media_item(path, "image", f"{text('title') or 'Promotion poster'} {price}".strip())}
+    missing = "" if price else " Tell me the price and I'll add it."
+    yield {"type": "text", "delta": "Here is your promotion poster, made with your real product photo so the products and "
+                                    f"labels stay exactly right.{missing} Want changes? Tell me the new title, price or "
+                                    "wording."}
+
+
 POSTER_MARK = "on your poster"   # every poster reply says this, so a text-only follow-up continues the edit
 POSTER = {}   # the poster being edited: {"image", "lines", "changes"} (local app, one user)
 
@@ -153,6 +227,9 @@ def poster_events(ask, earlier, follow_up=False):
     yield {"type": "status", "text": "Planning the new text..."}
     changes, question = plan_poster(ask, earlier)
     current = [POSTER["changes"].get(i, l["text"]) for i, l in enumerate(POSTER["lines"])]
+    # drop "changes" that keep the same words (the planner sometimes echoes a line back)
+    changes = {i: t for i, t in changes.items()
+               if not (0 <= i < len(current) and (t or "").strip().lower() == (current[i] or "").strip().lower())}
     if not changes and follow_up:   # not about the poster: let the normal chat answer
         return False
     if not changes:
@@ -174,6 +251,55 @@ def poster_events(ask, earlier, follow_up=False):
 
 
 ICON_ASK = re.compile(r"\b(logo|icon|app icon|favicon|emblem|badge)s?\b|ឡូហ្គោ|图标|标志|logo", re.I)
+
+
+FILE_EDIT = re.compile(r"\b(change|edit|update|fix|add|remove|delete|replace|set|make|put|move|rename|translate|shorten|"
+                       r"expand|instead|more|less|bigger|smaller)\b|កែ|ប្តូរ|修改|改", re.I)
+
+
+def file_events(kind, ask, history, model_id, revise=False):
+    """'create a quotation as PDF' -> the chat model writes the content, Python builds the real file + preview."""
+    name = OLLAMA_IDS.get(model_id)
+    if not name or not ollama_ok(name):   # the tiny 64M model can't write files: use an Ollama model that is installed
+        name = next((n for n in (FONG_MODEL, OLLAMA_MODEL) if ollama_ok(n)), None)
+    if not name:
+        yield {"type": "error", "text": "Making files needs an Ollama model. Run: brew services start ollama && ollama pull mistral"}
+        return
+    label = file_tools.KINDS[kind]["label"]
+    verb = "Updating" if revise else "Writing"
+    yield {"type": "status", "text": f"{verb} your {label} file..."}
+    words = []
+
+    def progress(n):
+        words.append(n)
+    import threading
+    out, err = {}, {}
+
+    def work():
+        try:
+            out["src"] = file_tools.write_source(kind, ask, OLLAMA_URL, name, history, revise, progress)
+        except Exception as e:   # noqa: BLE001
+            err["e"] = e
+    t = threading.Thread(target=work)
+    t.start()
+    shown = 0
+    while t.is_alive():
+        t.join(0.5)
+        if words and words[-1] != shown:
+            shown = words[-1]
+            yield {"type": "status", "text": f"{verb} your {label} file... {shown} words"}
+    if err:
+        raise err["e"]
+    src = out.get("src", "").strip()
+    if not src:
+        yield {"type": "error", "text": "The model returned nothing. Please try again."}
+        return
+    yield {"type": "status", "text": f"Building the {label} file..."}
+    item = file_tools.build_file(kind, src, fallback_title=ask[:50])
+    yield {"type": "file", "item": item}
+    what = "updated" if revise else "made"
+    yield {"type": "text", "delta": f"I {what} **{item['title']}** as a {label} file. {file_tools.FILE_MARK}, "
+                                    "or download it. Want changes? Just tell me what to change."}
 
 
 def icon_style(draw, question):
@@ -283,10 +409,11 @@ def media_item(path, kind=None, prompt=None):
     return {"type": kind, "name": name, "url": f"/media/{name}", "date": date, "prompt": prompt}
 
 
-def run_tool(name, args, init_image=None, caption=None):
+def run_tool(name, args, init_image=None, caption=None, show=True):
     """Generator: progress events, then a media or error event. Returns the tool result dict.
     Generation runs in a thread so the percentage can stream while it works. caption: what the chat shows
-    under the picture (the prompt without technical add-ons)."""
+    under the picture (the prompt without technical add-ons). show=False: don't send the picture to the chat
+    (it's a part of something bigger, like a poster backdrop)."""
     kind = "image" if name == "generate_image" else "video"
     label = "Creating image" if kind == "image" else "Creating video (can take several minutes)"
     yield {"type": "status", "text": label}
@@ -308,7 +435,9 @@ def run_tool(name, args, init_image=None, caption=None):
         yield {"type": "progress", "kind": kind, "value": min(99, int(shown * 100))}
     result = box.get("result") or {"error": f"unknown tool {name}"}
     yield {"type": "status", "text": ""}
-    if "path" in result:
+    if "path" in result and not show:
+        pass
+    elif "path" in result:
         item = media_item(result["path"], result.get("type"), caption or result.get("prompt"))
         item["seconds"] = result.get("seconds")
         yield {"type": "media", "item": item}
@@ -414,10 +543,12 @@ class ChatRequest(BaseModel):
     temperature: float = 0.7
     max_new: int = 512
     use_tools: bool = True
+    image_hd: bool = False          # True: FLUX 1024px (minutes, better); False: sdxl-turbo 512px (seconds)
     top_k: int = 3
 
 
 def chat_events(req: ChatRequest):
+    media_tools.IMAGE_HD = req.image_hd
     question = req.messages[-1]["content"].strip()
     history = [{"role": m["role"], "content": m["content"]} for m in req.messages[:-1]][-6:]
     cmd, _, prompt = question.partition(" ")
@@ -435,6 +566,11 @@ def chat_events(req: ChatRequest):
             return
         yield {"type": "status", "text": "Looking at your photo..."}
         asked = translate(question, "English") if is_khmer(question) else question
+        # "promotion ... $10" + a product photo is a new sale poster even without a create verb (typos like "creaet")
+        if req.use_tools and PROMO_ASK.search(asked) and not EDIT_ASK.search(asked) and (
+                CREATE_VERB.search(asked) or POSTER_ASK.search(asked) or promo_poster.find_price(asked)):
+            yield from promo_events(images[0], asked, history)
+            return
         if EDIT_ASK.search(asked) or POSTER_ASK.search(asked):   # posters: swap the words, don't redraw
             photo = Image.open(io.BytesIO(base64.b64decode(images[0]))).convert("RGB")
             yield {"type": "status", "text": "Reading the text on your poster..."}
@@ -468,10 +604,34 @@ def chat_events(req: ChatRequest):
         return
 
     last_reply = next((m["content"] for m in reversed(history) if m["role"] == "assistant"), "")
+    # A product photo sent a moment ago, then "Yes" / "make a poster for it": use that photo, don't draw from scratch
+    prev = next((m["images"] for m in reversed(req.messages[-5:-1]) if m.get("role") == "user" and m.get("images")), None)
+    if prev and req.use_tools and not HOW_TO.search(question):
+        asked = translate(question, "English") if is_khmer(question) else question
+        if file_tools.detect_kind(asked):   # "create a React POS app" after a poster: a file, not another poster
+            prev = None
+    if prev and req.use_tools and not HOW_TO.search(question):
+        if ((PROMO_ASK.search(asked) or POSTER_ASK.search(asked)) and CREATE_VERB.search(asked)
+                or PROMO_ASK.search(asked) and POSTER_ASK.search(asked) and not EDIT_ASK.search(asked)
+                or YES.search(asked) and OFFERED_VISUAL.search(last_reply)
+                or "promotion poster" in last_reply and (PROMO_ASK.search(asked) or EDIT_ASK.search(asked))):
+            yield from promo_events(prev[0].split(",", 1)[-1], asked, history)
+            return
     if POSTER and POSTER_MARK in last_reply:
         asked = translate(question, "English") if is_khmer(question) else question
         earlier = [m["content"] for m in history if m["role"] == "user"][-3:]
         if (yield from poster_events(asked, earlier, follow_up=True)):
+            return
+
+    # "create a quotation as PDF / an Excel sheet / slides / a React app": build a real file with a preview
+    if req.use_tools and not HOW_TO.search(question):
+        asked = translate(question, "English") if is_khmer(question) else question
+        kind = file_tools.detect_kind(asked)
+        if kind:
+            yield from file_events(kind, asked, history, req.model)
+            return
+        if file_tools.LAST and file_tools.FILE_MARK in last_reply and FILE_EDIT.search(asked):
+            yield from file_events(file_tools.LAST["kind"], asked, history, req.model, revise=True)
             return
 
     if INDEX["emb"] is not None:
@@ -552,6 +712,7 @@ def auth_google(body: GoogleLogin):
 
 class ImageRequest(BaseModel):
     prompt: str
+    hd: bool = False
 
 
 @app.post("/api/image")
@@ -561,6 +722,7 @@ def make_image(body: ImageRequest):
         raise HTTPException(400, "Describe the image you want.")
     with GPU_LOCK:
         unload_ollama()
+        media_tools.IMAGE_HD = body.hd
         result = execute_media_tool("generate_image", {"prompt": body.prompt.strip()})
     if not result or "path" not in result:
         raise HTTPException(500, (result or {}).get("error", "Image generation failed."))
@@ -641,6 +803,8 @@ def list_media(kind: str | None = None):
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
+os.makedirs(file_tools.FILES_DIR, exist_ok=True)
+app.mount("/files", StaticFiles(directory=file_tools.FILES_DIR), name="files")
 
 DIST = os.path.join(ROOT, "web", "dist")
 if os.path.isdir(DIST):  # serve the built React app (npm run build) from the same port

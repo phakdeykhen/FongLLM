@@ -20,13 +20,29 @@ export function MediaCard({ item, onOpen, large }) {
 }
 
 // A generated image/video inside a chat answer.
+function fileName(item) {
+  return item.name || item.url.split('/').pop()
+}
+
+export function DownloadButton({ item, className = 'msg-action', size = 15 }) {
+  return (
+    <a className={className} href={item.url} download={fileName(item)} title="Download" aria-label="Download"
+      onClick={(e) => e.stopPropagation()}>
+      <Icon name="download" size={size} />
+    </a>
+  )
+}
+
 export function MediaView({ item, onOpen }) {
   return (
     <div className="msg-media">
       {item.type === 'video'
         ? <video src={item.url} controls />
         : <img src={item.url} alt={item.prompt || 'Generated image'} onClick={() => onOpen?.(item)} />}
-      {item.prompt && <div className="msg-media-cap">{item.prompt}{item.seconds ? ` · ${item.seconds}s` : ''}</div>}
+      <div className="msg-media-cap">
+        <span>{item.prompt}{item.seconds ? ` · ${item.seconds}s` : ''}</span>
+        <DownloadButton item={item} />
+      </div>
     </div>
   )
 }
@@ -37,7 +53,11 @@ export function Lightbox({ item, onClose }) {
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="Image preview">
       {item.type === 'video' ? <video src={item.url} controls autoPlay onClick={(e) => e.stopPropagation()} />
         : <img src={item.url} alt={item.prompt || 'Generated image'} />}
-      <div className="lightbox-cap">{item.prompt || item.name} · {fmt(item.date)}</div>
+      <div className="lightbox-cap" onClick={(e) => e.stopPropagation()}>
+        <span>{item.prompt || item.name} · {fmt(item.date)}</span>
+        <a className="lightbox-dl" href={item.url} download={fileName(item)}><Icon name="download" size={16} />Download</a>
+        <button className="lightbox-dl" onClick={onClose}><Icon name="x" size={16} />Close</button>
+      </div>
     </div>
   )
 }

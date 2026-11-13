@@ -23,6 +23,10 @@ export default function SettingsPage({ settings, setSettings, info, onClearChats
         <input type="checkbox" checked={settings.use_tools} onChange={(e) => setSettings({ use_tools: e.target.checked })} />
         <span>Let the model create images and videos when you ask for them</span>
       </label>
+      <label className="field check">
+        <input type="checkbox" checked={!!settings.image_hd} onChange={(e) => setSettings({ image_hd: e.target.checked })} />
+        <span>HD images (FLUX, 1024px): much better pictures, but each one takes a few minutes. Off = Fast (about 5 s, 512px).</span>
+      </label>
       <label className="field">
         <span>Temperature <b>{settings.temperature.toFixed(2)}</b></span>
         <input type="range" min="0" max="1.5" step="0.05" value={settings.temperature} onChange={(e) => setSettings({ temperature: +e.target.value })} />

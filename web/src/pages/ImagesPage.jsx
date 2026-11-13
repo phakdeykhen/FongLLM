@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/format.js'
 
 // Images page: style presets, your images, and a box that creates a new image directly.
 
-export default function ImagesPage({ onOpen, onCreated }) {
+export default function ImagesPage({ onOpen, onCreated, hd, onHd }) {
   const [tab, setTab] = useState('styles')
   const [mine, setMine] = useState(null)
   const [style, setStyle] = useState(null)
@@ -14,6 +14,15 @@ export default function ImagesPage({ onOpen, onCreated }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const input = useRef(null)
+  const [elapsed, setElapsed] = useState(0)   // seconds since Create was pressed
+
+  useEffect(() => {
+    if (!busy) return
+    setElapsed(0)
+    const t0 = Date.now()
+    const id = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [busy])
 
   useEffect(() => { listMedia('image').then(setMine).catch(() => setMine([])) }, [])
 
@@ -28,7 +37,7 @@ export default function ImagesPage({ onOpen, onCreated }) {
     if (!t || busy) return
     setBusy(true); setError('')
     try {
-      const item = await makeImage(style ? `${t}, ${style.suffix}` : t)
+      const item = await makeImage(style ? `${t}, ${style.suffix}` : t, hd)
       item.prompt = t
       setMine((m) => [item, ...(m || [])])
       setTab('mine')
@@ -79,7 +88,19 @@ export default function ImagesPage({ onOpen, onCreated }) {
           </button>
         ) : <Icon name="sparkles" size={18} className="bar-spark" />}
         <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={style ? `Describe a new ${style.label.toLowerCase()} image` : 'Describe a new image'} aria-label="Describe a new image" />
+        {busy && (
+          <span className="bar-wait" role="status">
+            Creating{hd ? ' in HD' : ''}… {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+            <small>{hd ? 'HD takes 2–5 min' : 'about 20 s'}</small>
+          </span>
+        )}
         {error && <span className="bar-error" title={error}>{error}</span>}
+        {onHd && (
+          <button type="button" className={`hd-btn ${hd ? 'on' : ''}`} onClick={() => onHd(!hd)} aria-pressed={!!hd} disabled={busy}
+            title={hd ? 'HD: FLUX 1024px, better but takes minutes. Click for Fast.' : 'Fast: about 20 seconds, 512px. Click for HD.'}>
+            <Icon name={hd ? 'sparkles' : 'zap'} size={14} />{hd ? 'HD' : 'Fast'}
+          </button>
+        )}
         <button className="send" disabled={!text.trim() || busy} aria-label="Create image">
           {busy ? <span className="dot-spin" /> : <Icon name="arrowUp" size={18} />}
         </button>

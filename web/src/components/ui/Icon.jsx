@@ -1,6 +1,6 @@
 // App icons come from Lucide (lucide-react). Components ask for icons by these short names.
 import {
-  Archive, ArrowRight, ArrowUp, Check, ChevronDown, CircleHelp, CircleUser, Clapperboard, Copy, File, FileText, FolderOpen, House, Image, LogIn,
+  Archive, ArrowRight, Zap, Download, ExternalLink, FileCode2, FileSpreadsheet, Presentation, Code2, Eye, ArrowUp, Check, ChevronDown, CircleHelp, CircleUser, Clapperboard, Copy, File, FileText, FolderOpen, House, Image, LogIn,
   LogOut, MessageCirclePlus, Mic, Monitor, Moon, PanelLeft, Pencil, Pin, PieChart, Play, Plus, RotateCw, Search, Share, SlidersHorizontal, Sparkles, Square, Sun,
   Trash2, X,
 } from 'lucide-react'
@@ -41,6 +41,14 @@ const ICONS = {
   share: Share,
   archive: Archive,
   retry: RotateCw,
+  zap: Zap,
+  download: Download,
+  external: ExternalLink,
+  code: Code2,
+  eye: Eye,
+  fileCode: FileCode2,
+  sheet: FileSpreadsheet,
+  slides: Presentation,
 }
 
 export default function Icon({ name, size = 18, className = '' }) {

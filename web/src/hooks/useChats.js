@@ -5,10 +5,11 @@ import { SERVER_CMD } from '@/lib/constants.js'
 import useLocalStorage from './useLocalStorage.js'
 
 // Chats (saved in the browser) plus sending a message and streaming the answer into it.
-export default function useChats({ settings, onMedia }) {
+export default function useChats({ settings, onMedia, onFile }) {
   const [chats, setChats] = useLocalStorage('chats', [])
   const [currentId, setCurrentId] = useState(null)   // null = a fresh, unsaved chat
   const [busy, setBusy] = useState(false)
+  const [busyId, setBusyId] = useState(null)   // the chat the answer is streaming into (other chats aren't busy)
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(null)   // { kind: 'image' | 'video', value: 0-100 } while one is being made
   const abort = useRef(null)
@@ -33,12 +34,17 @@ export default function useChats({ settings, onMedia }) {
       setChats((cs) => [...cs, { id, title: chatTitle(text), messages: [], updated: Date.now() }])
       setCurrentId(id)
     }
-    const history = base.filter((m) => m.content).map(({ role, content }) => ({ role, content }))
+    // the newest earlier photo goes along too, so "Yes, make the poster" can still use it (older ones stay home)
+    const lastPhoto = base.findLast((m) => m.images?.length)
+    const history = base.filter((m) => m.content || m === lastPhoto).map((m) => ({
+      role: m.role, content: m.content || '', ...(m === lastPhoto && { images: m.images }),
+    }))
     updateChat(id, (c) => ({
       ...c, updated: Date.now(),
-      messages: [...cut(c.messages), { role: 'user', content: text, at: Date.now(), ...(images.length && { images }) }, { role: 'assistant', content: '', media: [], sources: [] }],
+      messages: [...cut(c.messages), { role: 'user', content: text, at: Date.now(), ...(images.length && { images }) }, { role: 'assistant', content: '', media: [], files: [], sources: [] }],
     }))
     setBusy(true)
+    setBusyId(id)
     setStatus('')
     setProgress(null)
     abort.current = new AbortController()
@@ -47,19 +53,21 @@ export default function useChats({ settings, onMedia }) {
       await streamChat({
         messages: [...history, { role: 'user', content: text, ...(images.length && { images }) }],
         model: settings.model, temperature: settings.temperature, max_new: settings.max_new,
-        use_tools: settings.use_tools, top_k: settings.top_k,
+        use_tools: settings.use_tools, image_hd: settings.image_hd, top_k: settings.top_k,
       }, (ev) => {
         if (ev.type === 'text') patchLast(id, (m) => ({ ...m, content: m.content + ev.delta }))
         else if (ev.type === 'status') setStatus(ev.text)
         else if (ev.type === 'progress') setProgress({ kind: ev.kind, value: ev.value })
         else if (ev.type === 'sources') patchLast(id, (m) => ({ ...m, sources: ev.items }))
         else if (ev.type === 'media') { gotMedia = true; setProgress(null); patchLast(id, (m) => ({ ...m, media: [...(m.media || []), ev.item] })) }
+        else if (ev.type === 'file') { patchLast(id, (m) => ({ ...m, files: [...(m.files || []), ev.item] })); onFile?.(ev.item) }
         else if (ev.type === 'error') { setProgress(null); patchLast(id, (m) => ({ ...m, error: ev.text })) }
       }, abort.current.signal)
     } catch (e) {
       if (e.name !== 'AbortError') patchLast(id, (m) => ({ ...m, error: `Couldn't reach the Fong AI server (${e.message}). Is \`${SERVER_CMD}\` running?` }))
     }
     setBusy(false)
+    setBusyId(null)
     setStatus('')
     setProgress(null)
     if (gotMedia) onMedia?.()
@@ -74,5 +82,5 @@ export default function useChats({ settings, onMedia }) {
   const archive = (id) => { patch(id, { archived: true, pinned: false }); if (id === currentId) setCurrentId(null) }
   const clearAll = () => { setChats([]); setCurrentId(null) }
 
-  return { chats, chat, currentId, setCurrentId, busy, status, progress, send, stop, startNew, remove, clearAll, togglePin, rename, archive }
+  return { chats, chat, currentId, setCurrentId, busy, busyId, status, progress, send, stop, startNew, remove, clearAll, togglePin, rename, archive }
 }

@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Icon from '@/components/ui/Icon.jsx'
 import { MediaView } from '@/components/media/Media.jsx'
+import { FileCard } from '@/components/files/Files.jsx'
 import { timeAgo } from '@/lib/format.js'
 
 function CopyButton({ text, label = 'Copy answer' }) {
@@ -91,10 +92,23 @@ function Generating({ kind, value }) {
   )
 }
 
-export default function ChatView({ chat, busy, status, progress, onOpenImage, onEdit }) {
+export default function ChatView({ chat, busy, status, progress, onOpenImage, onEdit, onOpenFile, activeFile }) {
   const end = useRef(null)
+  const stick = useRef(true)   // follow new text only while the reader is at the bottom; scrolling up stops it
   const last = chat.messages[chat.messages.length - 1]
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [chat.messages.length, last?.content, status, progress?.kind])
+
+  useEffect(() => {
+    const box = end.current?.closest('.main')
+    if (!box) return
+    const onScroll = () => { stick.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120 }
+    box.addEventListener('scroll', onScroll, { passive: true })
+    return () => box.removeEventListener('scroll', onScroll)
+  }, [])
+  // a new message (yours, or opening a chat): jump to the bottom and follow again
+  useEffect(() => { stick.current = true; end.current?.scrollIntoView({ block: 'end' }) }, [chat.id, chat.messages.length])
+  // streaming text / status / progress: follow only if the reader hasn't scrolled up
+  useEffect(() => { if (stick.current) end.current?.scrollIntoView({ block: 'end' }) },
+    [last?.content, last?.media?.length, last?.files?.length, status, progress?.kind])
 
   return (
     <div className="thread">
@@ -105,6 +119,9 @@ export default function ChatView({ chat, busy, status, progress, onOpenImage, on
           <Sources items={m.sources} />
           {m.content && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>}
           {m.media?.map((item) => <MediaView key={item.url} item={item} onOpen={onOpenImage} />)}
+          {m.files?.length > 0 && (
+            <div className="fcards">{m.files.map((f) => <FileCard key={f.url} item={f} active={activeFile?.url === f.url} onOpen={onOpenFile} />)}</div>
+          )}
           {m.error && <div className="msg-error">{m.error}</div>}
           {busy && i === chat.messages.length - 1 && progress ? (
             <Generating kind={progress.kind} value={progress.value} />
