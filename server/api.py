@@ -44,6 +44,7 @@ import google_tools  # noqa: E402
 import design  # noqa: E402
 import design_catalog  # noqa: E402
 import design_style  # noqa: E402
+import design_html  # noqa: E402
 import vector_store  # noqa: E402
 import media_tools  # noqa: E402
 
@@ -374,6 +375,124 @@ HEADLINE_WORDS = {"thumb": "2-4", "repeat": "1-3", "tall": "3-6", "banner": "3-8
 SOON = {"card": "cards (business cards, invitations, vouchers, ID cards)", "certificate": "certificates",
         "infographic": "infographics and charts", "carousel": "carousels", "sign": "signs", "frame": "photo frames",
         "icon": "highlight covers", "artwork": "packaging, labels, uniforms and other print artwork"}
+
+
+COPYWRITER = """You write the words for a new poster that copies a reference poster's layout. Each line below is one
+text block of the reference: its id, its job, where it is, and its old text. Write a NEW text for every block, about the
+user's product and request, doing the same job at about the same length (old Chinese characters count as two letters).
+Rules:
+- the title stays short and punchy like the old one; keep its style (all caps if it was, an "!" if it had one)
+- prices: use the user's prices; if they gave none, write a believable price in $ (the reply will ask them to check)
+- dates and times: the user's; if none, keep the old format with a near-future date
+- item names: the user's products (read the words printed on the product below)
+- a faded background word: one short word about the topic
+- fine print: short, all caps
+- empty string "" for a block that has nothing sensible to say (e.g. a third price when there are only two products)
+- each product gets its own name and its own price; never repeat the old texts (they may be misread)
+- never keep the reference's brand names or its topic (coffee, a shop name) unless the user's product is that
+- write in English unless the user wrote in another language
+Reply with JSON only: {{"t0": "...", "t1": "...", ...}}
+
+Blocks:
+{blocks}
+
+Words printed on the user's product: {product_words}
+
+User's request: {ask}"""
+
+
+def vision_json(prompt, img):
+    """The local vision model looks at img and answers in JSON (repeatable: temperature 0)."""
+    r = requests.post(f"{OLLAMA_URL}/api/chat", timeout=600, json={
+        "model": VISION_MODEL, "stream": False, "format": "json", "options": {"temperature": 0, "seed": 7},
+        "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(_png_bytes(img)).decode()]}]})
+    r.raise_for_status()
+    return r.json().get("message", {}).get("content", "")
+
+
+def layout_copy_events(entry, ask, history, name, photo, ref):
+    """"Make a poster like image 1": the reference's whole layout (measured, labelled by the vision model), the user's
+    cut-out product, new words from the chat model, written as an editable HTML page and rendered to PNG by Chrome.
+    Returns False when the reference has too little structure to copy (the caller falls back to the style-only poster)."""
+    yield {"type": "status", "text": "Measuring the reference design..."}
+    a = design_html.analyze_reference(ref, vision_json if ollama_ok(VISION_MODEL) else None)
+    unload_ollama()   # free the vision model
+    if len(a["blocks"]) < 4:
+        return False
+    product_words, cut = "", None
+    if photo is not None:
+        product_words = " / ".join(dict.fromkeys(l["text"] for l in poster_text.find_text(photo)))[:200]
+        if ollama_ok(VISION_MODEL):   # what the products are, so each gets its own name and price
+            yield {"type": "status", "text": "Looking at your product..."}
+            try:
+                seen = json.loads(re.search(r"\{.*\}", vision_json(
+                    'Name each product in this photo, left to right, with a short appetizing menu name (e.g. "Brown Sugar '
+                    'Boba Milk Tea"). Reply with JSON only: {"products": ["...", "..."]}', photo), re.S).group(0))
+                names = [str(n) for n in seen.get("products") or []][:4]
+                if names:
+                    product_words += " | the products, left to right: " + "; ".join(names)
+            except Exception:   # noqa: BLE001
+                pass
+            unload_ollama()
+        yield {"type": "status", "text": "Cutting out your product..."}
+        cut = promo_poster.ai_cutout(photo) or promo_poster.cutout(photo)
+        cut = design._main_shapes(cut) if cut is not None else promo_poster.card(photo).convert("RGBA")
+    yield {"type": "status", "text": "Writing the words..."}
+    khmer = is_khmer(ask)
+    asked = translate(ask, "English") if khmer else ask
+    earlier = [m["content"][:400] for m in history[-4:] if m["role"] == "user"]
+    r = requests.post(f"{OLLAMA_URL}/api/chat", timeout=300, json={
+        "model": name, "stream": False, "format": "json", "options": {"temperature": 0.4},
+        "messages": [{"role": "user", "content": COPYWRITER.format(blocks=design_html.describe(a), product_words=product_words or "(none)",
+                                                                   ask="\n".join(earlier + [asked]))}]})
+    r.raise_for_status()
+    m = re.search(r"\{.*\}", r.json().get("message", {}).get("content", ""), re.S)
+    try:
+        texts = {k: str(v).strip() for k, v in (json.loads(m.group(0)) if m else {}).items()}
+    except json.JSONDecodeError:
+        texts = {}
+    if not texts:
+        return False
+    for b in a["blocks"]:
+        t = texts.get(b["id"], "")
+        if t and t.replace(" ", "") == b["text"].replace(" ", "") and not re.search(r"\d", t):
+            texts[b["id"]] = ""   # copied the reference's old words (often misread): leave the block out
+        elif t and not khmer and not re.search(r"[\u3000-\u9fff]", asked) and re.search(r"[\u3000-\u9fff]", t):
+            texts[b["id"]] = translate(t, "English")   # Chinese left over from a Chinese reference
+    if khmer:   # the words in Khmer, except prices, dates and fine print
+        yield {"type": "status", "text": "Translating the words to Khmer..."}
+        for b in a["blocks"]:
+            if texts.get(b["id"]) and b["role"] in ("title", "subtitle", "item-name", "description", "slogan", "tag", "badge"):
+                texts[b["id"]] = translate(texts[b["id"]], "Khmer")
+    unload_ollama()
+    yield {"type": "status", "text": f"Laying out your {entry['name']}..."}
+    folder = os.path.join(file_tools.FILES_DIR, time.strftime("%Y%m%d_%H%M%S") + "_" + os.urandom(3).hex())
+    os.makedirs(folder, exist_ok=True)
+    if cut is not None:
+        cut.save(os.path.join(folder, "product.png"))
+    W, H = a["size"]
+    width = 1080
+    height = round(H * width / W)
+    title = next((texts[b["id"]] for b in a["blocks"] if b["role"] == "title" and texts.get(b["id"])), entry["name"])
+    page = design_html.build_html(a, texts, "product.png" if cut is not None else None, width, title,
+                                  product_size=cut.size if cut is not None else None)
+    html_path = os.path.join(folder, "design.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(page)
+    png = design_html.render_png(html_path, os.path.join(folder, "design.png"), width, height)
+    path = _out_path("image", "png")
+    png.save(path)
+    rel = os.path.relpath(folder, file_tools.FILES_DIR)
+    yield {"type": "status", "text": ""}
+    yield {"type": "media", "item": media_item(path, "image", title)}
+    yield {"type": "file", "item": {"kind": "html", "name": "design.html", "title": title, "label": "Design", "group": "Design",
+                                    "url": f"/files/{rel}/design.html", "preview_url": f"/files/{rel}/design.html", "code": page,
+                                    "size": os.path.getsize(html_path), "date": time.time()}}
+    guessed = [b for b in a["blocks"] if b["role"] in ("price", "date") and texts.get(b["id"])]
+    yield {"type": "text", "delta": f"Here is your poster in the layout of your reference ({width}×{height}), with your product. "
+                                    "Click any word in the preview on the right to change it."
+                                    + (" I filled in prices and dates where you didn't give them, so please check those." if guessed else "")}
+    return True
 
 
 def _png_bytes(img):
@@ -815,6 +934,9 @@ def chat_events(req: ChatRequest):
             name = next((n for n in (OLLAMA_IDS.get(req.model), FONG_MODEL, OLLAMA_MODEL) if n and ollama_ok(n)), None)
             if name and (entry["layout"] in design_catalog.DESIGN_LAYOUTS or style_ref is not None):
                 unload_ollama()
+                if style_ref is not None and design_html.os.path.exists(design_html.CHROME):
+                    if (yield from layout_copy_events(entry, question, history, name, photo, style_ref)):
+                        return
                 yield from design_events(entry, question, history, name, photo=photo, style_ref=style_ref)
                 return
         if not edit_image and (EDIT_ASK.search(asked) or POSTER_ASK.search(asked)):   # posters: swap the words, don't redraw

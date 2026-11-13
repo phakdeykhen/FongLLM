@@ -28,8 +28,9 @@ def _font_path(name):
     return None
 
 
-def find_text(image, min_confidence=0.3):
-    """Lines of text in a PIL image: [{"text", "quad": [(x, y) x4: top-left, top-right, bottom-right, bottom-left], "confidence"}]."""
+def find_text(image, min_confidence=0.3, languages=None):
+    """Lines of text in a PIL image: [{"text", "quad": [(x, y) x4: top-left, top-right, bottom-right, bottom-left], "confidence"}].
+    languages: e.g. ["zh-Hans", "en-US"] to also read Chinese (Apple's reader has no Khmer)."""
     import Foundation
     import Vision
     image = image.convert("RGB")
@@ -41,6 +42,8 @@ def find_text(image, min_confidence=0.3):
     req = Vision.VNRecognizeTextRequest.alloc().init()
     req.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
     req.setUsesLanguageCorrection_(False)
+    if languages:
+        req.setRecognitionLanguages_(languages)
     handler = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
     ok, err = handler.performRequests_error_([req], None)
     if not ok:

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fongai-cli"
+version = "0.1.0"
+description = "Fong AI in your terminal: ask in plain words, it reads, writes and runs code for you."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = []   # standard library only, so it installs anywhere Python runs
+
+[project.scripts]
+fong = "fongai_cli.main:main"
+
+[tool.setuptools]
+packages = ["fongai_cli"]
