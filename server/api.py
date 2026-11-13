@@ -41,7 +41,9 @@ import poster_text  # noqa: E402
 import promo_poster  # noqa: E402
 import file_tools  # noqa: E402
 import google_tools  # noqa: E402
-import banner  # noqa: E402
+import design  # noqa: E402
+import design_catalog  # noqa: E402
+import design_style  # noqa: E402
 import vector_store  # noqa: E402
 import media_tools  # noqa: E402
 
@@ -324,61 +326,152 @@ def file_events(kind, ask, history, model_id, revise=False):
                                          "**New → File upload**, then open it with {app}.".replace("{app}", app))}
 
 
-BANNER_ASK = re.compile(r"\b(banners?|cover (image|photo)|header image|hero image|web ?banner|ad banner|facebook cover|"
-                        r"youtube (banner|thumbnail)|thumbnails?|billboard)\b|បដា|横幅", re.I)
-BANNER_PLANNER = """You design a marketing banner. From the user's request or brief, write the banner's words and pick the picture.
+DESIGN_PLANNER = """You design a {name} ({size}). From the user's request or brief, write its words and pick its picture.
 Reply with JSON only:
-{{"brand": "brand or product name (short; empty if none)",
-  "eyebrow": "small label above the headline, max 6 words (e.g. 'New', a program name, an offer)",
-  "headline": "the main message, 3-8 punchy words",
-  "highlight": "1-3 words from the headline to color (the key benefit)",
-  "subheadline": "one sentence, max 22 words, the concrete value",
-  "features": ["2-4 very short selling points, max 4 words each"],
+{{"brand": "brand, shop or product name (short; empty if none)",
+  "eyebrow": "small label above the headline, max 5 words (an offer, event name, program name or 'New')",
+  "headline": "the main message, {words} punchy words",
+  "highlight": "1-2 words from the headline to color (the key benefit)",
+  "subheadline": "one sentence, max 20 words, the concrete value or details (date, place, price) from the request",
+  "features": ["2-4 very short selling points, max 3 words each, only from the request"],
   "cta": "button text, 2-3 words",
-  "color": "#hex brand color that fits the topic",
-  "hero": "the photo on the right: a PERSON or a real OBJECT doing something, concrete and visual (e.g. 'a smiling young man using a laptop with a friendly robot assistant', 'a cup of iced coffee on a wooden table'). Never a banner, sign, screen, poster or anything with words on it"}}
-Use only facts from the request; don't invent prices, dates or claims. Write in English.
+  "color": "#hex brand color that fits the topic (coffee = brown, nature = green, tech = blue, sale = red, luxury = black or gold)",
+  "hero": "the photo: a PERSON or a real OBJECT, concrete and visual (e.g. 'a cup of iced latte on a wooden cafe table', 'a smiling bride and groom'). Never a sign, screen, poster or anything with words"}}
+Use only facts from the request: don't invent prices, dates, phone numbers or claims. Write in English.
 
 Request:
 {ask}"""
+REDESIGN = re.compile(r"\b(redesign|re-design|remake|rebuild|recreate|new design|design (it|this)|follow (the |your )?layout|"
+                      r"fongai (style|layout)|(into|as|to) (an? )?(\w+ ){0,3}(banners?|posters?|story|stories|posts?|covers?|"
+                      r"thumbnails?|flyers?|standees?|backdrops?|roll-?up))\b", re.I)
+TEXT_EDIT = re.compile(r"\b(change|replace|fix|update|edit|correct|swap)\b.{0,30}\b(text|words?|price|title|name|date|phone|"
+                       r"number|wording|headline)\b", re.I)
+STYLE_ASK = re.compile(r"\b(like|same as|similar to|in the style of|style of|follow|copy)\b.{0,20}\b(image|picture|photo|pic|img|"
+                       r"design|poster|this|that|second|2nd|first|1st|last)\b|\b(style|look|vibe|theme)\b", re.I)
+ORDINALS = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2}
 
 
-def banner_events(ask, history, name):
-    """Designed banner: the model writes the words, the image model paints only the hero picture,
-    and banner.py lays it out with real fonts (sharp, correctly spelled text)."""
+def style_reference(asked, pics):
+    """Which attached picture is the style to copy? 'like image 2' / 'the second one'; otherwise, with two or more
+    pictures and a style request, the one with the most text on it (a finished design), else the last one."""
+    if len(pics) < 2:
+        return 0 if len(pics) == 1 and STYLE_ASK.search(asked) and REFERENCE_ONLY.search(asked) else None
+    m = re.search(r"\b(?:image|picture|photo|pic|img|design|no\.?|#)\s*(\d)\b", asked, re.I)
+    if m and 1 <= int(m.group(1)) <= len(pics):
+        return int(m.group(1)) - 1
+    m = re.search(r"\b(first|1st|second|2nd|third|3rd)\b", asked, re.I)
+    if m and ORDINALS[m.group(1).lower()] < len(pics):
+        return ORDINALS[m.group(1).lower()]
+    if re.search(r"\blast\b", asked, re.I):
+        return len(pics) - 1
+    words = [sum(len(l["text"].split()) for l in poster_text.find_text(p)) for p in pics]
+    best = max(range(len(pics)), key=lambda i: words[i])
+    return best if words[best] >= words[-1] + 4 else len(pics) - 1
+
+
+REFERENCE_ONLY = re.compile(r"\b(style|look|vibe|theme)\b", re.I)   # one picture + "in this style": a reference, no product
+HEADLINE_WORDS = {"thumb": "2-4", "repeat": "1-3", "tall": "3-6", "banner": "3-8", "square": "3-7", "poster": "3-7"}
+SOON = {"card": "cards (business cards, invitations, vouchers, ID cards)", "certificate": "certificates",
+        "infographic": "infographics and charts", "carousel": "carousels", "sign": "signs", "frame": "photo frames",
+        "icon": "highlight covers", "artwork": "packaging, labels, uniforms and other print artwork"}
+
+
+def _png_bytes(img):
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def design_events(entry, ask, history, name, photo=None, style_ref=None):
+    """Any catalog design (banner, poster, story, standee, thumbnail...): the model writes the words, the image model
+    paints only the photo, and design.py lays it out at the exact size with real fonts (sharp, correctly spelled)."""
+    layout, (w, h) = entry["layout"], entry["size"]
     khmer = is_khmer(ask)
     asked = translate(ask, "English") if khmer else ask
-    yield {"type": "status", "text": "Designing your banner..."}
+    # An attached picture: the user's own photo goes into the design as it is; a finished design (lots of text,
+    # e.g. a banner made elsewhere) is read and rebuilt in FongAI's layout with its words and colors.
+    own_photo, reference, color, style = None, "", None, None
+    if style_ref is not None:   # "like image 2": copy that design's look; the other picture is the product
+        yield {"type": "status", "text": "Studying the style you showed me..."}
+        b64 = base64.b64encode(_png_bytes(style_ref)).decode()
+        style = design_style.read_style(style_ref, lambda q: "".join(
+            ev.get("delta", "") for ev in answer_vision([{"role": "user", "content": q}], 0.1, 200, [b64])))
+        unload_ollama()   # free the vision model
+    product_words = ""
+    if style is not None and photo is not None:
+        product_words = " / ".join(dict.fromkeys(l["text"] for l in poster_text.find_text(photo)))[:200]
+        yield {"type": "status", "text": "Cutting out your product..."}
+        own_photo = promo_poster.ai_cutout(photo) or promo_poster.cutout(photo) or promo_poster.card(photo).convert("RGBA")
+    elif photo is not None:
+        yield {"type": "status", "text": "Reading your picture..."}
+        lines = poster_text.find_text(photo)
+        if sum(len(l["text"].split()) for l in lines) >= 6:
+            reference = "\n".join(l["text"] for l in lines[:40])
+        else:
+            own_photo = photo
+        small = photo.copy()
+        small.thumbnail((256, 256))
+        color = "#%02x%02x%02x" % promo_poster.accent_color(small)
+    yield {"type": "status", "text": f"Designing your {entry['name']}..."}
     earlier = [m["content"][:600] for m in history[-4:] if m["role"] == "user"]
+    if reference:
+        asked += ("\n\nThe user attached an existing design to rebuild in this format. Keep its brand, message, offer "
+                  "and details. The words on it:\n" + reference)
+    prompt = DESIGN_PLANNER.format(name=entry["name"], size=f"{w}x{h} px",
+                                   words="2-4" if style is not None else HEADLINE_WORDS.get(layout, "3-7"),
+                                   ask="\n".join(earlier + [asked]))
+    if style is not None:
+        prompt += ("\n\nThe look is copied from another poster, but the TOPIC comes only from the user's request and their "
+                   "product. Make 'highlight' ONE short fun word that is NOT in the headline (like 'relax', 'new!', 'yum').")
+    if product_words:
+        prompt += f"\n\nWords printed on the user's product (use the brand name from here): {product_words}"
     r = requests.post(f"{OLLAMA_URL}/api/chat", timeout=300, json={
         "model": name, "stream": False, "format": "json", "options": {"temperature": 0.4},
-        "messages": [{"role": "user", "content": BANNER_PLANNER.format(ask="\n".join(earlier + [asked]))}]})
+        "messages": [{"role": "user", "content": prompt}]})
     r.raise_for_status()
     m = re.search(r"\{.*\}", r.json().get("message", {}).get("content", ""), re.S)
     try:
         plan = json.loads(m.group(0)) if m else {}
     except json.JSONDecodeError:
         plan = {}
-    if khmer:   # the words on the banner in Khmer; the picture prompt stays English
-        yield {"type": "status", "text": "Translating the banner to Khmer..."}
+    if khmer:   # the words in Khmer; the picture prompt stays English
+        yield {"type": "status", "text": "Translating the words to Khmer..."}
         for k in ("eyebrow", "headline", "subheadline", "cta"):
             if plan.get(k):
                 plan[k] = translate(str(plan[k]), "Khmer")
         plan["highlight"] = ""
         plan["features"] = [translate(str(f), "Khmer") for f in plan.get("features") or []][:4]
+    if color:
+        plan["color"] = color   # match the attached picture
     unload_ollama()   # free the chat model before the image model loads (16GB)
-    hero = None
-    subject = str(plan.get("hero") or plan.get("headline") or asked)[:300]
-    result = yield from run_tool("generate_image", {"prompt": banner.hero_prompt(subject)}, show=False)
-    if "path" in result:
-        hero = Image.open(result["path"]).convert("RGB")
-    yield {"type": "status", "text": "Laying out your banner..."}
+    hero = own_photo
+    if hero is None and layout != "repeat":   # a step-and-repeat wall is only the brand, tiled
+        subject = str(plan.get("hero") or plan.get("headline") or asked)[:300]
+        prompt = (design.hero_prompt(subject, layout) if style is None else
+                  f"{subject}, single product, isolated on a plain white background, studio product photography, no text")
+        result = yield from run_tool("generate_image", {"prompt": prompt}, show=False)
+        if "path" in result:
+            hero = Image.open(result["path"]).convert("RGB")
+            if style is not None:
+                hero = promo_poster.ai_cutout(hero) or promo_poster.cutout(hero) or hero.convert("RGBA")
+    if style is not None and entry["layout"] not in ("poster", "square", "tall"):
+        (w, h) = (1697, 2400)   # the styled layout is a portrait poster
+    yield {"type": "status", "text": f"Laying out your {entry['name']}..."}
     path = _out_path("image", "png")
-    banner.make_banner(plan, hero).save(path)
+    design.make_design(plan, hero, layout, (w, h), style=style).save(path)
     yield {"type": "status", "text": ""}
-    yield {"type": "media", "item": media_item(path, "image", str(plan.get("headline") or "Banner"))}
-    yield {"type": "text", "delta": "Here is your banner (1600×900). The words are typeset in a real font, so they're sharp "
-                                    "and spelled right. Want changes? Tell me a new headline, button text, color or picture."}
+    yield {"type": "media", "item": media_item(path, "image", f"{entry['name']}: {plan.get('headline') or ''}".strip(": "))}
+    yield {"type": "text", "delta": f"Here is your **{entry['name']}** ({w}×{h}). The words are typeset in a real font, so "
+                                    "they're sharp and spelled right. Want changes? Tell me a new headline, button, color "
+                                    "or picture."}
+
+
+def design_soon(entry):
+    """Catalog types without their own layout yet: say so honestly and offer the closest one."""
+    kind = entry["layout"].split(":", 1)[1]
+    yield {"type": "text", "delta": f"A dedicated **{entry['name']}** layout isn't ready yet: FongAI's designs for "
+                                    f"{SOON.get(kind, kind)} are coming next. For now I can make it as a **poster** "
+                                    f"or a **square post** with the same words. Just say \"make it a poster\"."}
 
 
 def google_events(kind, ask, history, model_id):
@@ -710,6 +803,20 @@ def chat_events(req: ChatRequest):
                 CREATE_VERB.search(asked) or POSTER_ASK.search(asked) or promo_poster.find_price(asked)):
             yield from promo_events(images[0], asked, history)
             return
+        # "make this into an Instagram story" / "redesign this" / "create a banner with my photo": FongAI's layout system
+        wants_design = req.use_tools and not edit_image and not TEXT_EDIT.search(asked) and (
+            REDESIGN.search(asked) or (design_catalog.match(asked) and CREATE_VERB.search(asked)))
+        if wants_design or (len(images) > 1 and STYLE_ASK.search(asked)):
+            pics = [Image.open(io.BytesIO(base64.b64decode(b))).convert("RGB") for b in images[:4]]
+            ref_i = style_reference(asked, pics)
+            style_ref = pics[ref_i] if ref_i is not None else None
+            photo = next((p for i, p in enumerate(pics) if i != ref_i), None)
+            entry = design_catalog.match(asked) or design_catalog.for_photo(*(photo or pics[0]).size)
+            name = next((n for n in (OLLAMA_IDS.get(req.model), FONG_MODEL, OLLAMA_MODEL) if n and ollama_ok(n)), None)
+            if name and (entry["layout"] in design_catalog.DESIGN_LAYOUTS or style_ref is not None):
+                unload_ollama()
+                yield from design_events(entry, question, history, name, photo=photo, style_ref=style_ref)
+                return
         if not edit_image and (EDIT_ASK.search(asked) or POSTER_ASK.search(asked)):   # posters: swap the words, don't redraw
             photo = Image.open(io.BytesIO(base64.b64decode(images[0]))).convert("RGB")
             yield {"type": "status", "text": "Reading the text on your poster..."}
@@ -765,7 +872,7 @@ def chat_events(req: ChatRequest):
     # "write an email to my boss" / "meeting with Dara Friday 3pm" / "directions to the airport": a Google card
     if req.use_tools and not file_tools.detect_kind(question):
         asked = translate(question, "English") if is_khmer(question) else question
-        gkind = google_tools.detect(asked)
+        gkind = None if design_catalog.match(asked) else google_tools.detect(asked)
         if gkind:
             yield from google_events(gkind, question, history, req.model)
             return
@@ -801,9 +908,16 @@ def chat_events(req: ChatRequest):
         yield {"type": "error", "text": "This model isn't available right now. Pick another model, or start it: "
                                         f"brew services start ollama && {fix}"}
         return
-    if mistral and req.use_tools and BANNER_ASK.search(question) and (CREATE_VERB.search(question) or
-                                                                        TEXT_IMAGE_ASK.search(question)) and not HOW_TO.search(question):
-        yield from banner_events(question, history, ollama_name)
+    design_type = design_catalog.match(translate(question, "English") if is_khmer(question) else question) \
+        if req.use_tools and not HOW_TO.search(question) and (CREATE_VERB.search(question) or TEXT_IMAGE_ASK.search(question)) else None
+    if mistral and design_type and design_type["layout"] in design_catalog.DESIGN_LAYOUTS:
+        yield from design_events(design_type, question, history, ollama_name)
+        return
+    if design_type and design_type["layout"].startswith("doc:"):   # brochure, company profile, pitch deck...
+        yield from file_events(design_type["layout"][4:], question, history, req.model)
+        return
+    if design_type and design_type["layout"].startswith("soon:"):
+        yield from design_soon(design_type)
         return
     if mistral and req.use_tools and TEXT_IMAGE_ASK.search(question) and not HOW_TO.search(question):   # draw it, don't ask questions back
         yield {"type": "status", "text": "Designing your image..."}
