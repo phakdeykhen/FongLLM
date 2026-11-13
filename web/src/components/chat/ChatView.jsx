@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import Icon from '@/components/ui/Icon.jsx'
 import { MediaView } from '@/components/media/Media.jsx'
 import { FileCard } from '@/components/files/Files.jsx'
+import GoogleCard from '@/components/google/GoogleCard.jsx'
 import { timeAgo } from '@/lib/format.js'
 
 function CopyButton({ text, label = 'Copy answer' }) {
@@ -119,6 +120,7 @@ export default function ChatView({ chat, busy, status, progress, onOpenImage, on
           <Sources items={m.sources} />
           {m.content && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>}
           {m.media?.map((item) => <MediaView key={item.url} item={item} onOpen={onOpenImage} />)}
+          {m.google?.map((g, j) => <GoogleCard key={j} item={g} />)}
           {m.files?.length > 0 && (
             <div className="fcards">{m.files.map((f) => <FileCard key={f.url} item={f} active={activeFile?.url === f.url} onOpen={onOpenFile} />)}</div>
           )}

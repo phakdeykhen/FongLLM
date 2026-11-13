@@ -40,6 +40,7 @@ from media_tools import MEDIA_DIR, MEDIA_TOOLS, _out_path, execute_media_tool, t
 import poster_text  # noqa: E402
 import promo_poster  # noqa: E402
 import file_tools  # noqa: E402
+import google_tools  # noqa: E402
 import media_tools  # noqa: E402
 
 MODELS = os.environ.get("MINIMIND_ASSISTANT_MODELS", os.path.join(ROOT, "assistant", "models"))
@@ -58,7 +59,10 @@ SYSTEM_PROMPT = ("You are {name}, a helpful assistant made by Fong. If asked who
                  "generate_video; call them only when the user asks for an image, picture, drawing, photo, logo, icon, PNG, poster or video, "
                  "and write the prompt argument in English. When they ask for one, call the tool right away with your own good design "
                  "choices (subject, style, colors, background) even if the request is short; never ask for more details first and "
-                 "never say you can't create images. Otherwise just answer.")
+                 "never say you can't create images. You have no access to Google Drive, Google Sheets, Google Docs, email or "
+                 "the internet. Never say you created, saved, sent or shared a file, sheet or document: the app builds real "
+                 "files itself and shows them with a preview. If the user wants one, tell them to ask like: "
+                 "'create an Excel sheet of my monthly expenses'. Otherwise just answer.")
 # Photo + "make one like this": the vision model turns the photo's style into a prompt for the image generator.
 VISION_PROMPT_WRITER = ("Write ONE English prompt (at most 60 words) for an image generator that will create what the user asks for, "
                         "matching the style of the attached image: subject, art style (e.g. flat, 3D, glossy, line art), colors, lighting "
@@ -88,6 +92,7 @@ POSTER_ASK = re.compile(r"\b(poster|flyer|banner|brochure|cover|thumbnail|ad|adv
 # "modify / edit / fix this" with a photo: change that picture (img2img) instead of drawing a new one from scratch
 EDIT_ASK = re.compile(r"\b(modify|edit|change|fix|improve|update|enhance|adjust|redo|retouch|recolou?r|turn (it|this))\b|"
                       r"\bmake (it|this)\b|កែ|修改|改", re.I)
+FOLLOW_TITLE = re.compile(r"^\s*(tit+le|name|call it)\b", re.I)   # "Title: kimi" after asking for a file
 # "add a person / remove the arrow" with a photo: also a redraw (kept out of EDIT_ASK so "create a poster, add $10" stays a poster)
 ADD_ASK = re.compile(r"\b(add|remove|replace|erase|delete|put|insert|swap)\b|បន្ថែម|ដក|添加|加上|去掉|删除", re.I)
 EDIT_PROMPT_WRITER = ("Write ONE English prompt (at most 60 words) for an image generator that will redraw the attached image with the "
@@ -297,11 +302,49 @@ def file_events(kind, ask, history, model_id, revise=False):
         yield {"type": "error", "text": "The model returned nothing. Please try again."}
         return
     yield {"type": "status", "text": f"Building the {label} file..."}
-    item = file_tools.build_file(kind, src, fallback_title=ask[:50])
+    # "Do the same as a Google Sheet" / "please create now": name it after the real request, "Title: kimi" -> "kimi"
+    named = FOLLOW_TITLE.match(ask)
+    title = ask[named.end():].strip(" :=-\"'") if named else ask
+    if not named and len(ask.split()) <= 6:
+        title = next((m["content"] for m in reversed(history[-6:]) if m["role"] == "user"
+                      and m["content"] != ask and file_tools.detect_kind(m["content"])), ask)
+    item = file_tools.build_file(kind, src, fallback_title=(title or ask)[:50])
     yield {"type": "file", "item": item}
     what = "updated" if revise else "made"
-    yield {"type": "text", "delta": f"I {what} **{item['title']}** as a {label} file. {file_tools.FILE_MARK}, "
+    yield {"type": "text", "delta": f"I {what} **{item['title']}** as {'an' if label[0] in 'AEIOU' else 'a'} {label} file. {file_tools.FILE_MARK}, "
                                     "or download it. Want changes? Just tell me what to change."}
+    asked_google = [ask] + [m["content"] for m in history[-6:] if m["role"] == "user"]
+    if any(file_tools.GOOGLE_ASK.search(t) for t in asked_google):
+        app = {"xlsx": "Google Sheets", "docx": "Google Docs", "pptx": "Google Slides"}.get(kind, "Google Drive")
+        yield {"type": "text", "delta": (f"\n\nClick **Save to {app}** under the file to create it in your Google "
+                                         "Drive (Google asks for your permission the first time)." if GOOGLE_CLIENT_ID else
+                                         f"\n\n**To open it in {app}:** download it, go to drive.google.com, click "
+                                         "**New → File upload**, then open it with {app}.".replace("{app}", app))}
+
+
+def google_events(kind, ask, history, model_id):
+    """Gmail draft / Calendar event / Maps link: the model fills it in, the browser shows a card to check and confirm."""
+    name = OLLAMA_IDS.get(model_id)
+    if not name or not ollama_ok(name):
+        name = next((n for n in (FONG_MODEL, OLLAMA_MODEL) if ollama_ok(n)), None)
+    if not name:
+        yield {"type": "error", "text": "This needs an Ollama model. Run: brew services start ollama"}
+        return
+    yield {"type": "status", "text": {"gmail": "Writing your email...", "calendar": "Planning your event...",
+                                      "maps": "Finding it on the map..."}[kind]}
+    khmer = is_khmer(ask)   # the chat models write poor Khmer: write in English, then translate
+    try:
+        card = google_tools.prepare(kind, translate(ask, "English") if khmer else ask, history, OLLAMA_URL, name)
+        if khmer and kind == "gmail":
+            yield {"type": "status", "text": "Translating to Khmer..."}
+            card["subject"] = translate(card["subject"], "Khmer") if card["subject"] else ""
+            card["body"] = translate(card["body"], "Khmer") if card["body"] else ""
+    except Exception as e:   # noqa: BLE001
+        yield {"type": "error", "text": f"Couldn't prepare that: {str(e)[:150]}"}
+        return
+    yield {"type": "status", "text": ""}
+    yield {"type": "text", "delta": google_tools.INTRO[kind]}
+    yield {"type": "google", "item": card}
 
 
 def icon_style(draw, question):
@@ -660,6 +703,14 @@ def chat_events(req: ChatRequest):
         if (yield from poster_events(asked, earlier, follow_up=True)):
             return
 
+    # "write an email to my boss" / "meeting with Dara Friday 3pm" / "directions to the airport": a Google card
+    if req.use_tools and not file_tools.detect_kind(question):
+        asked = translate(question, "English") if is_khmer(question) else question
+        gkind = google_tools.detect(asked)
+        if gkind:
+            yield from google_events(gkind, question, history, req.model)
+            return
+
     # "create a quotation as PDF / an Excel sheet / slides / a React app": build a real file with a preview
     if req.use_tools and not HOW_TO.search(question):
         asked = translate(question, "English") if is_khmer(question) else question
@@ -667,9 +718,15 @@ def chat_events(req: ChatRequest):
         if kind:
             yield from file_events(kind, asked, history, req.model)
             return
-        if file_tools.LAST and file_tools.FILE_MARK in last_reply and FILE_EDIT.search(asked):
+        if file_tools.LAST and file_tools.FILE_MARK in last_reply and (FILE_EDIT.search(asked) or FOLLOW_TITLE.search(asked)):
             yield from file_events(file_tools.LAST["kind"], asked, history, req.model, revise=True)
             return
+        if len(asked.split()) <= 6 and (file_tools.MAKE.search(asked) or FOLLOW_TITLE.search(asked)):
+            earlier = next((k for m in reversed(history[-6:]) if m["role"] == "user"
+                            for k in [file_tools.detect_kind(m["content"])] if k), None)
+            if earlier and file_tools.FILE_MARK not in last_reply:
+                yield from file_events(earlier, asked, history, req.model)
+                return
 
     if INDEX["emb"] is not None:
         yield {"type": "status", "text": "Searching your documents..."}

@@ -1,17 +1,48 @@
 import { useState } from 'react'
 import Icon from '@/components/ui/Icon.jsx'
+import { GOOGLE_APP, saveToGoogle } from '@/lib/google.js'
 
-// A file FongAI made (PDF, Word, Excel, PowerPoint, React, HTML): a card in the chat and a preview panel on the right.
-const KIND_ICON = { pdf: 'doc', docx: 'doc', xlsx: 'sheet', pptx: 'slides', react: 'fileCode', html: 'fileCode' }
-const EXT = { pdf: 'PDF', docx: 'DOCX', xlsx: 'XLSX', pptx: 'PPTX', react: 'JSX', html: 'HTML' }
+// Google files made from FongAI's files, remembered so a second click opens the same sheet: { file url: sheet url }
+function savedSheets() {
+  try { return JSON.parse(localStorage.getItem('gsheets') || '{}') } catch { return {} }
+}
+function rememberSheet(fileUrl, sheetUrl) {
+  try { localStorage.setItem('gsheets', JSON.stringify({ ...savedSheets(), [fileUrl]: sheetUrl })) } catch { /* private window */ }
+}
 
-function size(bytes) {
-  if (!bytes) return ''
-  return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`
+// "Save to Google Sheets / Docs / Slides / Drive" under a file card (asks Google's permission once).
+function GoogleButton({ item }) {
+  const [link, setLink] = useState(() => savedSheets()[item.url] || null)
+  const [state, setState] = useState('')   // '' | 'saving' | error message
+  const app = GOOGLE_APP[item.kind]?.name || 'Google Drive'
+  async function save() {
+    if (link) { window.open(link, '_blank', 'noopener'); return }
+    setState('saving')
+    try {
+      const url = await saveToGoogle(item)
+      rememberSheet(item.url, url)
+      setLink(url)
+      setState('')
+      window.open(url, '_blank', 'noopener')
+    } catch (e) {
+      setState(e.message)
+    }
+  }
+  return (
+    <>
+      <button className="gsheet-btn" onClick={save} disabled={state === 'saving'}
+        title={link ? `Open it in ${app}` : `Create it in ${app} in your Google Drive`}>
+        <Icon name={link ? 'external' : (KIND_ICON[item.kind] || 'file')} size={15} />
+        {state === 'saving' ? 'Saving to Google…' : link ? `Open in ${app}` : `Save to ${app}`}
+      </button>
+      {state && state !== 'saving' && <span className="gsheet-err" role="alert">{state}</span>}
+    </>
+  )
 }
 
 export function FileCard({ item, active, onOpen }) {
   return (
+    <div className="fcard-wrap">
     <div className={`fcard kind-${item.kind} ${active ? 'active' : ''}`}>
       <button className="fcard-main" onClick={() => onOpen(item)} aria-label={`Preview ${item.name}`}>
         <span className="fcard-icon"><Icon name={KIND_ICON[item.kind] || 'file'} size={20} /></span>
@@ -23,6 +54,8 @@ export function FileCard({ item, active, onOpen }) {
       <a className="msg-action fcard-dl" href={item.url} download={item.name} title="Download" aria-label={`Download ${item.name}`}>
         <Icon name="download" size={17} />
       </a>
+    </div>
+    <GoogleButton item={item} />
     </div>
   )
 }

@@ -1,20 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '@/components/ui/Icon.jsx'
 import { googleLogin } from '@/api/client.js'
+import { loadGoogleScript } from '@/lib/google.js'
 
 import { AVATAR_COLORS as COLORS } from '@/lib/constants.js'
 
-function loadGoogleScript() {
-  if (window.google?.accounts?.id) return Promise.resolve()
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script')
-    s.src = 'https://accounts.google.com/gsi/client'
-    s.async = true
-    s.onload = resolve
-    s.onerror = () => reject(new Error('Couldn\'t load Google sign-in. Check your internet connection.'))
-    document.head.appendChild(s)
-  })
-}
 
 const GoogleG = () => (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">

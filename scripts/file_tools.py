@@ -34,15 +34,16 @@ KINDS = {
 }
 _KIND_WORDS = [   # first match wins, so "a PDF of the slides" stays a PDF only when "pdf" is checked before "slides"
     ("pdf", r"\bpdfs?\b"),
-    ("pptx", r"\b(power ?points?|pptx?|slides?|slide ?decks?|decks?|presentations?)\b"),
-    ("xlsx", r"\b(excel|xlsx|spread ?sheets?|worksheets?|csv)\b"),
-    ("docx", r"\b(docx|ms ?word|microsoft word|microsoft|word (document|doc|file|format)s?|(in|as|to) word)\b"),
+    ("pptx", r"\b(power ?points?|pptx?|slides?|slide ?decks?|decks?|presentations?|google ?slides?)\b"),
+    ("xlsx", r"\b(excel|xlsx|spread ?sheets?|worksheets?|csv|google ?sheets?|g-?sheets?)\b"),
+    ("docx", r"\b(docx|ms ?word|microsoft word|microsoft|word (document|doc|file|format)s?|(in|as|to) word|google ?docs?)\b"),
     ("react", r"\b(react(js)?|jsx|tsx|react component)\b"),
     ("html", r"\b(html|web ?page|website|landing ?page)\b"),
 ]
 MAKE = re.compile(r"\b(creae?te?|creaet|make|write|generate|build|design|draft|prepare|produce|give me|export|save|"
                   r"convert|turn|put|need|want|do)\b|\bas (an? )?\w+ file\b|បង្កើត|ធ្វើ|做|生成|写", re.I)
 PICTURE = re.compile(r"\b(png|jpe?g|logo|icon|picture|image|photo|poster|drawing|wallpaper|banner)s?\b", re.I)
+GOOGLE_ASK = re.compile(r"\bgoogle ?(sheets?|docs?|slides?|drive)\b|\bg-?sheets?\b", re.I)
 FILE_MARK = "Preview it on the right"   # every file reply says this, so "change X" can follow up on that file
 LAST = {}   # the newest file: {"kind", "source", "title"} (local app, one user)
 
@@ -85,7 +86,9 @@ REVISE = ("Here is the current {label} source, between <<< and >>>:\n<<<\n{sourc
 
 def strip_fences(text):
     m = re.search(r"```[\w+-]*\n(.*?)```", text, re.S)
-    return (m.group(1) if m else text).strip()
+    text = (m.group(1) if m else text).strip()
+    # when updating a file the model sometimes copies the <<< >>> markers that wrapped the old version
+    return re.sub(r"^\s*(<<<|>>>)\s*$\n?", "", text, flags=re.M).strip()
 
 
 def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_progress=None):
@@ -376,7 +379,9 @@ def slug(text):
 
 
 FILLER = re.compile(r"\b(please|pls|can you|could you|help( me)?|create|creaet|make|write|generate|build|design|give me|now|"
-                    r"use|using|with|in|as|a|an|the|for me|code|simple|reactjs|react|jsx|html|file|app)\b", re.I)
+                    r"use|using|with|in|as|a|an|the|for me|code|simple|reactjs|react|jsx|html|file|app|"
+                    r"i need|i want|need|want|do|same|just|my|our|for|of|to|google ?sheets?|g-?sheets?|sheets?|"
+                    r"spread ?sheets?|excel|xlsx|csv|google ?docs?|google ?slides?|google ?drive|google)\b", re.I)
 
 
 def short_title(ask):

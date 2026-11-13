@@ -23,6 +23,7 @@ import useChats from '@/hooks/useChats.js'
 import { getInfo, listMedia } from '@/api/client.js'
 import { DEFAULT_SETTINGS, FALLBACK_MODELS } from '@/lib/constants.js'
 import { parsePath, pathFor } from '@/lib/route.js'
+import { setGoogleClientId } from '@/lib/google.js'
 
 const isNarrow = () => window.innerWidth <= 800
 
@@ -63,7 +64,7 @@ export default function App() {
   }, [view, chats.currentId, chatGone])
 
   useEffect(() => {
-    getInfo().then(setInfo).catch(() => setInfo({ error: true }))
+    getInfo().then((i) => { setInfo(i); setGoogleClientId(i.google_client_id) }).catch(() => setInfo({ error: true }))
     refreshRecent()
   }, [refreshRecent])
 
