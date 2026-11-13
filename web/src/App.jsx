@@ -127,7 +127,7 @@ export default function App() {
         {showTopLogin && <button className="top-login" onClick={() => setLoginOpen(true)}><Icon name="login" size={16} />Log in</button>}
         {(pages[view] || pages.home)()}
       </main>
-      {view === 'home' && chats.chat?.messages.length > 0 && <FilePreview item={preview} onClose={() => setPreview(null)} />}
+      {view === 'home' && chats.chat?.messages.length > 0 && (!preview?.chatId || preview.chatId === chats.currentId) && <FilePreview item={preview} onClose={() => setPreview(null)} />}
       <Lightbox item={lightbox} onClose={() => setLightbox(null)} />
       {loginOpen && (
         <LoginModal googleClientId={info?.google_client_id} dark={dark} onClose={() => setLoginOpen(false)}

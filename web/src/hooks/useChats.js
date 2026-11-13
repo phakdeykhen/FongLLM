@@ -67,9 +67,9 @@ export default function useChats({ settings, onMedia, onFile }) {
         else if (ev.type === 'media') { gotMedia = true; setProgress(null); patchLast(id, (m) => ({ ...m, media: [...(m.media || []), ev.item] })) }
         else if (ev.type === 'code') {
           draft += ev.delta
-          onFile?.({ streaming: true, kind: ev.kind, label: ev.label, title: 'Writing…', name: 'draft', code: draft })
+          onFile?.({ streaming: true, kind: ev.kind, label: ev.label, title: 'Writing…', name: 'draft', code: draft, chatId: id })
         }
-        else if (ev.type === 'file') { patchLast(id, (m) => ({ ...m, files: [...(m.files || []), ev.item] })); onFile?.(ev.item) }
+        else if (ev.type === 'file') { patchLast(id, (m) => ({ ...m, files: [...(m.files || []), ev.item] })); onFile?.({ ...ev.item, chatId: id }) }
         else if (ev.type === 'google') patchLast(id, (m) => ({ ...m, google: [...(m.google || []), ev.item] }))
         else if (ev.type === 'error') { setProgress(null); patchLast(id, (m) => ({ ...m, error: ev.text })) }
       }, abort.current.signal)
