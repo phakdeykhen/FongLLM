@@ -150,10 +150,13 @@ def needs_translation(text):
 def _get_translator():
     if "translator" not in _pipes:
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        device = _device()
+        # Apple GPU (MPS): the second translation in a process crashes the whole server (SIGTRAP, any dtype).
+        # The CPU in bf16 is stable and just as fast for this 1.8B model (~4 s a sentence, ~3.6 GB).
+        device = "cpu" if _device() == "mps" else _device()
         tok = AutoTokenizer.from_pretrained(TRANSLATE_MODEL, fix_mistral_regex=True)
         # eager attention: torch 2.6 fused SDPA crashes on MPS with grouped-query attention
-        model = AutoModelForCausalLM.from_pretrained(TRANSLATE_MODEL, dtype=_video_dtype(device), attn_implementation="eager")
+        model = AutoModelForCausalLM.from_pretrained(TRANSLATE_MODEL, dtype=torch.bfloat16 if device != "cuda" else _video_dtype(device),
+                                                     attn_implementation="eager")
         _pipes["translator"] = (model.to(device).eval(), tok)
     return _pipes["translator"]
 
