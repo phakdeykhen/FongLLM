@@ -41,6 +41,8 @@ import poster_text  # noqa: E402
 import promo_poster  # noqa: E402
 import file_tools  # noqa: E402
 import google_tools  # noqa: E402
+import banner  # noqa: E402
+import vector_store  # noqa: E402
 import media_tools  # noqa: E402
 
 MODELS = os.environ.get("MINIMIND_ASSISTANT_MODELS", os.path.join(ROOT, "assistant", "models"))
@@ -322,6 +324,63 @@ def file_events(kind, ask, history, model_id, revise=False):
                                          "**New → File upload**, then open it with {app}.".replace("{app}", app))}
 
 
+BANNER_ASK = re.compile(r"\b(banners?|cover (image|photo)|header image|hero image|web ?banner|ad banner|facebook cover|"
+                        r"youtube (banner|thumbnail)|thumbnails?|billboard)\b|បដា|横幅", re.I)
+BANNER_PLANNER = """You design a marketing banner. From the user's request or brief, write the banner's words and pick the picture.
+Reply with JSON only:
+{{"brand": "brand or product name (short; empty if none)",
+  "eyebrow": "small label above the headline, max 6 words (e.g. 'New', a program name, an offer)",
+  "headline": "the main message, 3-8 punchy words",
+  "highlight": "1-3 words from the headline to color (the key benefit)",
+  "subheadline": "one sentence, max 22 words, the concrete value",
+  "features": ["2-4 very short selling points, max 4 words each"],
+  "cta": "button text, 2-3 words",
+  "color": "#hex brand color that fits the topic",
+  "hero": "the photo on the right: a PERSON or a real OBJECT doing something, concrete and visual (e.g. 'a smiling young man using a laptop with a friendly robot assistant', 'a cup of iced coffee on a wooden table'). Never a banner, sign, screen, poster or anything with words on it"}}
+Use only facts from the request; don't invent prices, dates or claims. Write in English.
+
+Request:
+{ask}"""
+
+
+def banner_events(ask, history, name):
+    """Designed banner: the model writes the words, the image model paints only the hero picture,
+    and banner.py lays it out with real fonts (sharp, correctly spelled text)."""
+    khmer = is_khmer(ask)
+    asked = translate(ask, "English") if khmer else ask
+    yield {"type": "status", "text": "Designing your banner..."}
+    earlier = [m["content"][:600] for m in history[-4:] if m["role"] == "user"]
+    r = requests.post(f"{OLLAMA_URL}/api/chat", timeout=300, json={
+        "model": name, "stream": False, "format": "json", "options": {"temperature": 0.4},
+        "messages": [{"role": "user", "content": BANNER_PLANNER.format(ask="\n".join(earlier + [asked]))}]})
+    r.raise_for_status()
+    m = re.search(r"\{.*\}", r.json().get("message", {}).get("content", ""), re.S)
+    try:
+        plan = json.loads(m.group(0)) if m else {}
+    except json.JSONDecodeError:
+        plan = {}
+    if khmer:   # the words on the banner in Khmer; the picture prompt stays English
+        yield {"type": "status", "text": "Translating the banner to Khmer..."}
+        for k in ("eyebrow", "headline", "subheadline", "cta"):
+            if plan.get(k):
+                plan[k] = translate(str(plan[k]), "Khmer")
+        plan["highlight"] = ""
+        plan["features"] = [translate(str(f), "Khmer") for f in plan.get("features") or []][:4]
+    unload_ollama()   # free the chat model before the image model loads (16GB)
+    hero = None
+    subject = str(plan.get("hero") or plan.get("headline") or asked)[:300]
+    result = yield from run_tool("generate_image", {"prompt": banner.hero_prompt(subject)}, show=False)
+    if "path" in result:
+        hero = Image.open(result["path"]).convert("RGB")
+    yield {"type": "status", "text": "Laying out your banner..."}
+    path = _out_path("image", "png")
+    banner.make_banner(plan, hero).save(path)
+    yield {"type": "status", "text": ""}
+    yield {"type": "media", "item": media_item(path, "image", str(plan.get("headline") or "Banner"))}
+    yield {"type": "text", "delta": "Here is your banner (1600×900). The words are typeset in a real font, so they're sharp "
+                                    "and spelled right. Want changes? Tell me a new headline, button text, color or picture."}
+
+
 def google_events(kind, ask, history, model_id):
     """Gmail draft / Calendar event / Maps link: the model fills it in, the browser shows a card to check and confirm."""
     name = OLLAMA_IDS.get(model_id)
@@ -410,8 +469,24 @@ def load_khmer_whisper():
 
 @lru_cache(maxsize=1)
 def load_embedder():
-    from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(os.path.join(MODELS, "mxbai-embed-large-v1"), device=DEVICE)
+    """mxbai-embed-large with plain transformers: CLS-token vector, normalized (what its 1_Pooling config asks for).
+    sentence-transformers 2.3.1 can't read that config ("include_prompt"), which broke document upload."""
+    from transformers import AutoModel, AutoTokenizer
+    path = os.path.join(MODELS, "mxbai-embed-large-v1")
+    tok, model = AutoTokenizer.from_pretrained(path), AutoModel.from_pretrained(path).to(DEVICE).eval()
+
+    class Embedder:
+        def encode(self, texts, normalize_embeddings=True, batch_size=16):
+            out = []
+            for i in range(0, len(texts), batch_size):
+                batch = tok(texts[i:i + batch_size], padding=True, truncation=True, max_length=512, return_tensors="pt").to(DEVICE)
+                with torch.no_grad():
+                    v = model(**batch).last_hidden_state[:, 0]
+                if normalize_embeddings:
+                    v = torch.nn.functional.normalize(v, dim=-1)
+                out.append(v.float().cpu().numpy())
+            return np.concatenate(out) if out else np.zeros((0, model.config.hidden_size), np.float32)
+    return Embedder()
 
 
 @lru_cache(maxsize=1)
@@ -442,30 +517,14 @@ def unload_ollama():
             pass
 
 
-# ---------- documents (kept in memory; this is a single-user local app) ----------
-DOCS = {}   # name -> text
-INDEX = {"chunks": [], "sources": [], "emb": None}
-
-
-def rebuild_index():
-    chunks, sources = [], []
-    for name, raw in DOCS.items():
-        text = " ".join(raw.split())
-        for i in range(0, max(len(text), 1), 420):
-            if text[i:i + 500].strip():
-                chunks.append(text[i:i + 500])
-                sources.append(name)
-    emb = np.asarray(load_embedder().encode(chunks, normalize_embeddings=True, batch_size=16)) if chunks else None
-    INDEX.update(chunks=chunks, sources=sources, emb=emb)
+# ---------- documents: LanceDB on disk (out/vectors), so uploads survive restarts ----------
+STORE = vector_store.VectorStore(
+    encode=lambda texts: load_embedder().encode(texts, normalize_embeddings=True, batch_size=16),
+    encode_query=lambda q: load_embedder().encode([QUERY_PROMPT + q], normalize_embeddings=True)[0])
 
 
 def retrieve(query, k):
-    if INDEX["emb"] is None or k <= 0:
-        return []
-    q = load_embedder().encode([QUERY_PROMPT + query], normalize_embeddings=True)[0]
-    scores = INDEX["emb"] @ q
-    return [{"text": INDEX["chunks"][i], "source": INDEX["sources"][i], "score": round(float(scores[i]), 3)}
-            for i in np.argsort(-scores)[:k]]
+    return STORE.search(query, k)
 
 
 def with_context(question, hits):
@@ -728,7 +787,7 @@ def chat_events(req: ChatRequest):
                 yield from file_events(earlier, asked, history, req.model)
                 return
 
-    if INDEX["emb"] is not None:
+    if STORE.passages():
         yield {"type": "status", "text": "Searching your documents..."}
         hits = retrieve(question, req.top_k)
         yield {"type": "sources", "items": hits}
@@ -741,6 +800,10 @@ def chat_events(req: ChatRequest):
         fix = "zsh finetune/run.sh" if req.model == "fong4" else f"ollama pull {ollama_name}"
         yield {"type": "error", "text": "This model isn't available right now. Pick another model, or start it: "
                                         f"brew services start ollama && {fix}"}
+        return
+    if mistral and req.use_tools and BANNER_ASK.search(question) and (CREATE_VERB.search(question) or
+                                                                        TEXT_IMAGE_ASK.search(question)) and not HOW_TO.search(question):
+        yield from banner_events(question, history, ollama_name)
         return
     if mistral and req.use_tools and TEXT_IMAGE_ASK.search(question) and not HOW_TO.search(question):   # draw it, don't ask questions back
         yield {"type": "status", "text": "Designing your image..."}
@@ -896,7 +959,7 @@ def speak(req: SpeakRequest):
 
 @app.get("/api/documents")
 def list_documents():
-    return {"documents": [{"name": n, "chars": len(t)} for n, t in DOCS.items()], "passages": len(INDEX["chunks"])}
+    return {"documents": STORE.documents(), "passages": STORE.passages()}
 
 
 @app.post("/api/documents")
@@ -904,17 +967,16 @@ async def add_documents(files: list[UploadFile] = File(...)):
     for f in files:
         if not f.filename.lower().endswith((".txt", ".md")):
             raise HTTPException(400, f"{f.filename}: only .txt and .md files are supported")
-        DOCS[f.filename] = (await f.read()).decode("utf-8", errors="ignore")
-    with GPU_LOCK:
-        rebuild_index()
+    texts = [(f.filename, (await f.read()).decode("utf-8", errors="ignore")) for f in files]
+    with GPU_LOCK:   # only the new documents are embedded; the rest are already on disk
+        for name, text in texts:
+            STORE.add(name, text)
     return list_documents()
 
 
 @app.delete("/api/documents/{name}")
 def delete_document(name: str):
-    DOCS.pop(name, None)
-    with GPU_LOCK:
-        rebuild_index()
+    STORE.delete(name)
     return list_documents()
 
 

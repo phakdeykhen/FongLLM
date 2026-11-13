@@ -10,7 +10,12 @@ from urllib.parse import quote_plus
 
 import requests
 
-GMAIL_ASK = re.compile(r"\b(e-?mails?|gmail|mail (to|for))\b|អ៊ីមែល|邮件", re.I)
+# The ask itself must be about an email: "write an email to…", "email my boss…", "reply to this mail".
+# Just mentioning email ("…to email or print", "asks for your email") is not a request to write one.
+GMAIL_ASK = re.compile(
+    r"\b(write|draft|compose|send|prepare|make|create|reply|respond|answer)\b(\W+\w+){0,3}?\W+(e-?mail|gmail|mail|message)s?\b|"
+    r"\b(e-?mail|gmail|mail)\s+(to|for)\b|^\s*(please\s+)?e-?mail\s+(my|the|our|him|her|them|\w+@)|"
+    r"(សរសេរ|ផ្ញើ|បង្កើត).{0,12}អ៊ីមែល|អ៊ីមែល(ទៅ|ជូន)|(写|发).{0,4}邮件", re.I)
 CAL_ASK = re.compile(r"\b(calendar|schedule|remind(er)? me|meeting|appointment|event|book (a|an|the)|google meet|meet link)\b|"
                      r"ប្រតិទិន|ណាត់|日历|会议", re.I)
 MAPS_ASK = re.compile(r"\b(directions?|route|how (do i|to) get|navigate|on (the )?map|google maps?|where is|near ?by|"
@@ -24,7 +29,9 @@ def detect(text):
     """'write an email to my boss' -> 'gmail'; 'meeting with Dara Friday 3pm' -> 'calendar'; None otherwise."""
     if NOT_ACTION.search(text) and not MAPS_ASK.search(text):
         return None
-    if GMAIL_ASK.search(text) and DO.search(text):
+    if len(text.split()) > 40:   # a pasted brief or article: only its first sentence can be the request
+        text = re.split(r"(?<=[.!?។])\s", text.strip(), maxsplit=1)[0]
+    if GMAIL_ASK.search(text):
         return "gmail"
     if CAL_ASK.search(text) and (DO.search(text) or re.search(r"\b\d{1,2}(:\d\d)?\s*(am|pm)\b|\btomorrow\b", text, re.I)):
         return "calendar"
