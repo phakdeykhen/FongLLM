@@ -77,9 +77,119 @@ PROMPTS = {
     "react": ("Write ONE self-contained React component file for the request below. Use `export default function App()`. "
               "Only import from 'react' (useState, useEffect, ...). No other libraries, no CSS files: put styles in a "
               "<style> tag inside the JSX or in inline style objects. Make it look modern and polished. Output ONLY the code."),
-    "html": ("Write ONE complete self-contained HTML file for the request below, with all CSS in a <style> tag and any JS in "
-             "a <script> tag. No external files. Make it modern, polished and responsive. Output ONLY the HTML."),
+    "html": ("Write ONE complete self-contained HTML file for the request below, with any extra CSS in a <style> tag and any "
+             "JS in a <script> tag. Make it modern, polished and responsive. Output ONLY the HTML.\n\n"
+             "A design kit stylesheet is added for you automatically: do NOT link any stylesheet and do NOT write CSS for the "
+             "classes below (they are already styled); only set the brand color. For websites and landing pages, build "
+             "the page from these classes so it looks professional:\n"
+             "- <nav class=\"nav\"><div class=\"container\"><a class=\"logo\">Name</a><div class=\"links\"><a href=\"#about\">About</a>"
+             "...<a class=\"btn\">Contact</a></div></div></nav>\n"
+             "- <header class=\"hero\"><div class=\"container hero-grid\"><div><span class=\"eyebrow\">...</span><h1>...</h1>"
+             "<p class=\"lead\">...</p><a class=\"btn\">...</a> <a class=\"btn btn-outline\">...</a></div><img class=\"hero-img\" "
+             "src=\"...\"></div></header>\n"
+             "- <section class=\"section\" id=\"...\"><div class=\"container\"><span class=\"eyebrow\">...</span><h2>...</h2>"
+             "<p class=\"lead\">...</p><div class=\"grid\"><div class=\"card\"><div class=\"icon\">emoji</div><h3>...</h3><p>...</p></div>"
+             "...</div></div></section>  (use class=\"section section-alt\" on every other section)\n"
+             "- numbers: <div class=\"stats\"><div class=\"stat\"><b>15+</b><span>Years</span></div>...</div>\n"
+             "- team: <div class=\"grid\"><div class=\"card person\"><img src=\"...\"><h3>Name</h3><p>Role</p></div>...</div>\n"
+             "- quotes: <div class=\"card quote\"><p>\"...\"</p><cite>Name, Company</cite></div>\n"
+             "- contact: <section class=\"section\" id=\"contact\"><div class=\"container contact-grid\"><div><h2>...</h2>"
+             "<ul class=\"contact-list\"><li><b>Address</b>...</li><li><b>Phone</b>...</li><li><b>Email</b>...</li></ul></div>"
+             "<form><input placeholder=\"Your name\"><input placeholder=\"Email\"><textarea rows=\"5\" placeholder=\"Message\">"
+             "</textarea><button class=\"btn\">Send message</button></form></div></section>\n"
+             "- <section class=\"cta\"><div class=\"container\"><h2>...</h2><p>...</p><a class=\"btn btn-light\">...</a></div></section>\n"
+             "- <footer class=\"footer\"><div class=\"container\">...</div></footer>\n"
+             "Rules: write REAL, specific content (invent a believable company name, services, numbers, people and contact "
+             "details if none are given; never 'Company Name', 'Lorem ipsum' or 'Service 1'). A company website needs: nav, hero, "
+             "about with stats, 3-6 services as cards, why-us, team (3-4 people), 2-3 testimonials, contact (address, phone, "
+             "email, a form) and footer. Photos: https://picsum.photos/seed/WORD/900/650 (one different WORD per photo). "
+             "Team photos: https://i.pravatar.cc/300?img=N (N from 1 to 70). Set the brand color with "
+             "<style>:root{--brand:#2563eb}</style> (pick a color that fits the business)."),
 }
+# The kit the model builds on: good-looking defaults even when a small model writes little CSS of its own.
+KIT_CSS = """
+:where(:root){--brand:#2563eb;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--soft:#f8fafc;--radius:16px}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font:16px/1.65 Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Khmer",sans-serif;color:var(--ink);background:#fff}
+img{max-width:100%;display:block}a{color:var(--brand)}
+h1,h2,h3{line-height:1.2;margin:0 0 .5em;letter-spacing:-.02em}
+h1{font-size:clamp(2.2rem,5vw,3.6rem)}h2{font-size:clamp(1.7rem,3.5vw,2.5rem)}h3{font-size:1.2rem}
+.container{width:min(1140px,100% - 40px);margin-inline:auto}
+.nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.nav .container{display:flex;align-items:center;justify-content:space-between;min-height:68px;gap:16px;flex-wrap:wrap}
+.nav .logo{font-weight:800;font-size:1.3rem;color:var(--ink);text-decoration:none}
+.nav .links{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.nav .links a:not(.btn){color:var(--ink);text-decoration:none;font-weight:500;opacity:.8}.nav .links a:hover{opacity:1;color:var(--brand)}
+.btn{display:inline-block;padding:12px 24px;border-radius:999px;background:var(--brand);color:#fff!important;text-decoration:none;
+ font-weight:600;border:2px solid var(--brand);cursor:pointer;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-2px);box-shadow:0 10px 24px -8px var(--brand)}
+.btn-outline{background:transparent;color:var(--brand)!important}.btn.btn-light,.cta .btn{background:#fff;color:var(--brand)!important;border-color:#fff}
+.hero{color:var(--ink);padding:clamp(56px,9vw,110px) 0;background:radial-gradient(1200px 500px at 85% -10%,color-mix(in srgb,var(--brand) 16%,transparent),transparent),var(--soft)}
+.hero-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:center}
+.hero-img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:24px;box-shadow:0 30px 60px -20px rgba(15,23,42,.35)}
+.eyebrow{display:inline-block;font-size:.8rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--brand);
+ background:color-mix(in srgb,var(--brand) 10%,transparent);padding:6px 12px;border-radius:999px;margin-bottom:14px}
+.lead{font-size:1.15rem;color:var(--muted);max-width:640px;margin:0 0 28px}
+.section{padding:clamp(56px,8vw,96px) 0}.section-alt{background:var(--soft)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px;margin-top:32px}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:28px;transition:transform .2s,box-shadow .2s}
+.card:hover{transform:translateY(-4px);box-shadow:0 20px 40px -20px rgba(15,23,42,.25)}
+.card p{color:var(--muted);margin:0}
+.card .icon{width:52px;height:52px;display:grid;place-items:center;font-size:1.6rem;border-radius:14px;margin-bottom:16px;
+ background:color-mix(in srgb,var(--brand) 12%,transparent)}
+.person{text-align:center}.person img{width:120px;height:120px;border-radius:50%;object-fit:cover;margin:0 auto 16px}
+.quote p{font-size:1.05rem;color:var(--ink);font-style:italic;margin-bottom:16px}.quote cite{color:var(--muted);font-style:normal;font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:20px;margin-top:32px}
+.stat{padding:24px;border-radius:var(--radius);background:#fff;border:1px solid var(--line);text-align:center}
+.stat b{display:block;font-size:2.2rem;color:var(--brand);line-height:1.1}.stat span{color:var(--muted)}
+.cta{padding:72px 0;text-align:center;color:#fff;background:linear-gradient(135deg,var(--brand),color-mix(in srgb,var(--brand) 55%,#000))}
+.cta h2{color:#fff}.cta p{opacity:.9;margin:0 auto 24px;max-width:600px}
+.contact-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:40px;align-items:start}
+.contact-list{list-style:none;padding:0;margin:24px 0 0;display:grid;gap:14px}.contact-list li{color:var(--muted)}
+.contact-list b{color:var(--ink);display:block}
+form{display:grid;gap:14px;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:28px}input,textarea,select{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font:inherit;background:#fff}
+input:focus,textarea:focus{outline:2px solid var(--brand);border-color:transparent}
+.footer{background:var(--ink);color:#cbd5e1;padding:48px 0;font-size:.95rem}.footer a{color:#fff}
+@media (max-width:820px){.hero-grid,.contact-grid{grid-template-columns:1fr}.nav .links{gap:14px}}
+"""
+
+
+# a photo that can't load (offline, blocked host) becomes a soft brand-colored panel instead of a broken-image icon
+KIT_JS = ("<script>addEventListener('error',function(e){var i=e.target;if(i.tagName!=='IMG'||i.dataset.kitFail)return;"
+          "i.dataset.kitFail=1;i.alt='';i.src='data:image/svg+xml,'+encodeURIComponent(\"<svg xmlns='http://www.w3.org/2000/svg' "
+          "width='900' height='650'><defs><linearGradient id='g' x2='1' y2='1'><stop stop-color='#2563eb'/><stop offset='1' "
+          "stop-color='#93c5fd'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/></svg>\")},true)</script>")
+KIT_PAGE = re.compile(r"class=[\"'][^\"']*\b(hero|nav|section|card)\b", re.I)
+
+
+CONTACT_SECTION = """
+<section class="section" id="contact"><div class="container contact-grid"><div><span class="eyebrow">Contact</span>
+<h2>Let's talk</h2><p class="lead">Tell us about your project and we'll get back to you within one business day.</p></div>
+<form onsubmit="event.preventDefault();this.querySelector('button').textContent='Thanks! We will be in touch.'">
+<input required placeholder="Your name"><input required type="email" placeholder="Email"><textarea rows="5" placeholder="Message"></textarea>
+<button class="btn">Send message</button></form></div></section>
+"""
+
+
+def with_contact(page):
+    """A small model often forgets the contact section: a website built from the kit always gets one."""
+    if not KIT_PAGE.search(page) or re.search(r"<form|id=[\"']contact[\"']", page, re.I):
+        return page
+    m = re.search(r"<section[^>]*class=[\"']cta|<footer", page, re.I) or re.search(r"</body>", page, re.I)
+    return page[:m.start()] + CONTACT_SECTION + page[m.start():] if m else page
+
+
+def with_kit(page):
+    """Adds the kit stylesheet. On a page built from the kit's classes it goes last, so a small model's weaker rules for
+    .btn/.card/... can't undo it (its own --brand color still applies); on any other page (a game, a tool) it goes
+    first, so the page's own CSS wins."""
+    page = re.sub(r"<link[^>]+href=[\"'][^\"']*(design-?kit|kit\.css)[^\"']*[\"'][^>]*>\s*", "", page, flags=re.I)
+    tag = f"<style>{KIT_CSS}</style>{KIT_JS}"
+    if KIT_PAGE.search(page) and re.search(r"</head>", page, re.I):
+        return re.sub(r"</head>", lambda m: tag + m.group(0), page, count=1, flags=re.I)
+    if re.search(r"<head[^>]*>", page, re.I):
+        return re.sub(r"(<head[^>]*>)", lambda m: m.group(1) + tag, page, count=1, flags=re.I)
+    return tag + page
 REVISE = ("Here is the current {label} source, between <<< and >>>:\n<<<\n{source}\n>>>\n\nApply the user's change below and "
           "output the FULL updated source in exactly the same format. Change only what the user asks. Output ONLY the source.")
 
@@ -92,7 +202,7 @@ def strip_fences(text):
 
 
 def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_progress=None):
-    """Asks the Ollama model for the file's source text. on_progress(words) is called while it writes."""
+    """Asks the Ollama model for the file's source text. on_progress(words, text_so_far) is called while it writes."""
     import requests
     if revise and LAST:
         user = REVISE.format(label=KINDS[kind]["label"], source=LAST["source"]) + "\n\nUser's change: " + ask
@@ -102,6 +212,7 @@ def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_prog
     msgs += [m for m in history if m["role"] == "user"][-2:] + [{"role": "user", "content": user}]
     r = requests.post(f"{ollama_url}/api/chat", stream=True, timeout=900, json={
         "model": model, "messages": msgs, "stream": True,
+        **({"think": False} if model.startswith("fong-code") else {}),   # Bonsai 2: skip the long hidden reasoning
         "options": {"temperature": 0.3, "num_predict": 4096, "num_ctx": 8192}})
     r.raise_for_status()
     out, last = "", 0
@@ -110,7 +221,7 @@ def write_source(kind, ask, ollama_url, model, history=(), revise=False, on_prog
             out += json.loads(line).get("message", {}).get("content", "")
             if on_progress and time.time() - last > 0.7:
                 last = time.time()
-                on_progress(len(out.split()))
+                on_progress(len(out.split()), out)
     return strip_fences(out)
 
 
@@ -430,8 +541,9 @@ def build_file(kind, source, fallback_title="FongAI file"):
         with open(preview, "w", encoding="utf-8") as f:
             f.write(react_preview(source))
     elif kind == "html":
+        source = with_contact(source)
         with open(path, "w", encoding="utf-8") as f:
-            f.write(source)
+            f.write(with_kit(source))
         preview = path
     with open(os.path.join(folder, "source.txt"), "w", encoding="utf-8") as f:
         f.write(source)
@@ -440,5 +552,5 @@ def build_file(kind, source, fallback_title="FongAI file"):
     rel = os.path.relpath(folder, FILES_DIR)
     return {"kind": kind, "name": name, "title": title, "label": meta["label"], "group": meta["group"],
             "url": f"/files/{rel}/{name}", "preview_url": f"/files/{rel}/{os.path.basename(preview)}",
-            "code": source if kind in ("react", "html") else None, "size": os.path.getsize(path),
+            "code": with_kit(source) if kind == "html" else source if kind == "react" else None, "size": os.path.getsize(path),
             "date": time.time()}

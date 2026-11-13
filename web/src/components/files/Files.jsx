@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from '@/components/ui/Icon.jsx'
 import { GOOGLE_APP, saveToGoogle } from '@/lib/google.js'
 
@@ -72,8 +72,12 @@ export function FileCard({ item, active, onOpen }) {
 export function FilePreview({ item, onClose }) {
   const [tab, setTab] = useState('preview')
   const [copied, setCopied] = useState(false)
+  const pre = useRef(null)
+  // while the model writes, keep the newest line in view
+  useEffect(() => { if (item?.streaming && pre.current) pre.current.scrollTop = pre.current.scrollHeight }, [item?.code, item?.streaming])
   if (!item) return null
-  const code = item.code && tab === 'code'
+  const live = item.streaming
+  const code = item.code && (tab === 'code' || live)
   const scripted = item.kind === 'react' || item.kind === 'html'
   return (
     <aside className="preview-pane" aria-label={`Preview of ${item.name}`}>
@@ -82,7 +86,8 @@ export function FilePreview({ item, onClose }) {
           <span className="preview-title">{item.title}</span>
           <span className="preview-kind">· {EXT[item.kind] || item.label}</span>
         </div>
-        {item.code && (
+        {live && <span className="preview-live" role="status">Writing code…</span>}
+        {item.code && !live && (
           <div className="ptabs" role="tablist">
             <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'on' : ''} onClick={() => setTab('preview')}>
               <Icon name="eye" size={14} />Preview
@@ -98,15 +103,17 @@ export function FilePreview({ item, onClose }) {
             <Icon name={copied ? 'check' : 'copy'} size={17} />
           </button>
         )}
-        <a className="icon-btn" href={item.url} download={item.name} title="Download" aria-label="Download"><Icon name="download" size={17} /></a>
-        <a className="icon-btn" href={item.preview_url} target="_blank" rel="noreferrer" title="Open in new tab" aria-label="Open in new tab">
-          <Icon name="external" size={17} />
-        </a>
+        {!live && <>
+          <a className="icon-btn" href={item.url} download={item.name} title="Download" aria-label="Download"><Icon name="download" size={17} /></a>
+          <a className="icon-btn" href={item.preview_url} target="_blank" rel="noreferrer" title="Open in new tab" aria-label="Open in new tab">
+            <Icon name="external" size={17} />
+          </a>
+        </>}
         <button className="icon-btn" onClick={onClose} title="Close preview" aria-label="Close preview"><Icon name="x" size={18} /></button>
       </header>
       <div className="preview-body">
         {code
-          ? <pre className="preview-code"><code>{item.code}</code></pre>
+          ? <pre className="preview-code" ref={pre}><code>{item.code}</code></pre>
           : <iframe key={item.preview_url} title={item.name} src={item.preview_url}
               {...(scripted && { sandbox: 'allow-scripts allow-forms allow-modals allow-popups' })} />}
       </div>

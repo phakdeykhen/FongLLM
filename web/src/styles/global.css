@@ -639,3 +639,8 @@ input.auth-field { display: block; padding: 13px 16px; font: inherit; font-size:
   border-radius: 14px; background: var(--page); border: 1px dashed var(--accent); color: var(--text); }
 .cli-who { margin: 4px 0 0; font-size: .92rem; }
 .cli-ok { display: inline-flex; align-items: center; gap: 6px; color: #138a52; font-weight: 600; }
+
+/* "Writing code…" badge while the model streams a file into the side panel */
+.preview-live { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted, #64748b); }
+.preview-live::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #4f6ef7; animation: preview-pulse 1s ease-in-out infinite; }
+@keyframes preview-pulse { 50% { opacity: .3; } }

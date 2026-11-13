@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS = { model: 'fong4', temperature: 0.7, max_new: 512
 // Shown until /api/info answers; the server's list wins.
 export const FALLBACK_MODELS = [
   { id: 'fong4', name: 'FongAI 4', detail: 'Our own model · creates images and videos' },
+  { id: 'fong-code', name: 'FongAI Code', detail: '27B · best for code, apps and UI design · slower' },
   { id: 'mistral', name: 'FongAI 3.4', detail: 'Smart and fast · creates images and videos' },
   { id: 'fongai', name: 'FongAI 3.2', detail: 'Tiny 64M model trained here · mostly Chinese' },
 ]

@@ -21,7 +21,8 @@ from starlette.concurrency import run_in_threadpool
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 FONG_MODEL = os.environ.get("FONG_MODEL", "fongai")
-PUBLIC_MODELS = {"fongai": FONG_MODEL}   # name users send -> Ollama model on this server
+CODE_MODEL = os.environ.get("CODE_MODEL", "fong-code")   # Bonsai 2 27B: stronger at code, slower
+PUBLIC_MODELS = {"fongai": FONG_MODEL, "fongai-code": CODE_MODEL}   # name users send -> Ollama model on this server
 KEYS_FILE = os.environ.get("FONG_KEYS_FILE", os.path.join(os.path.expanduser("~"), ".fongai", "server_keys.txt"))
 MAX_TOKENS = int(os.environ.get("FONG_MAX_TOKENS", "4096"))   # per reply, so one user can't hold the GPU forever
 

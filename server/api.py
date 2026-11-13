@@ -52,7 +52,26 @@ MODELS = os.environ.get("MINIMIND_ASSISTANT_MODELS", os.path.join(ROOT, "assista
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
 FONG_MODEL = os.environ.get("FONG_MODEL", "fongai")   # our own fine-tune, built by finetune/run.sh
-OLLAMA_IDS = {"mistral": OLLAMA_MODEL, "fong4": FONG_MODEL}   # app model id -> Ollama model name
+CODE_MODEL = os.environ.get("CODE_MODEL", "fong-code")   # Bonsai 2 27B (ternary, ~7.6GB), built by models/bonsai2/install.sh
+OLLAMA_IDS = {"mistral": OLLAMA_MODEL, "fong4": FONG_MODEL, "fong-code": CODE_MODEL}   # app model id -> Ollama model name
+CODER_FALLBACK = os.environ.get("CODER_FALLBACK", "qwen2.5-coder:7b")   # when fong-code isn't installed
+# Any programming question, in any language: these go to the coding model, whichever chat model is picked.
+CODE_ASK = re.compile(
+    r"(```|traceback \(most recent|\bc\+\+|\bc#|\.(py|js|jsx|ts|tsx|java|kt|swift|go|rs|php|rb|cpp|cs|sql|sh|dart)\b|"
+    r"\b(python|javascript|typescript|java|kotlin|swift|golang|rust|php|ruby|csharp|sql|mysql|postgres(ql)?|sqlite|mongodb|"
+    r"bash|powershell|html|css|tailwind|react(js)?|next\.?js|vue(js)?|angular|svelte|node\.?js|express\.?js|django|flask|"
+    r"fastapi|laravel|spring ?boot|flutter|dart|unity|pandas|numpy|regex|leetcode|algorithm|data structure|"
+    r"(write|fix|debug|explain|refactor|optimi[sz]e|review|convert|translate|complete|test)\b.{0,40}\b(code|script|program|"
+    r"function|method|class|bug|query|loop|api|app|game|bot)|source code|coding|programming|syntax error|compile error|"
+    r"stack ?trace|null ?pointer|segfault|undefined is not))(?!\w)|សរសេរកូដ|កូដ|代码|编程", re.I)
+
+
+PICTURE_ASK_FOR_CODE = re.compile(r"\b(poster|banner|logo|flyer|photo|picture|image|video|wallpaper)s?\b", re.I)
+
+
+def code_model():
+    """The installed coding model: fong-code (Bonsai 2 27B) first, else qwen2.5-coder; None if neither."""
+    return next((n for n in (CODE_MODEL, CODER_FALLBACK) if ollama_ok(n)), None)
 VISION_MODEL = os.environ.get("VISION_MODEL", "qwen2.5vl:7b")   # answers when the user attaches photos
 # Optional "Continue with Google": create an OAuth client ID (type "Web application") at
 # https://console.cloud.google.com/apis/credentials with authorized JavaScript origin http://localhost:8000
@@ -274,16 +293,19 @@ def file_events(kind, ask, history, model_id, revise=False):
     name = OLLAMA_IDS.get(model_id)
     if not name or not ollama_ok(name):   # the tiny 64M model can't write files: use an Ollama model that is installed
         name = next((n for n in (FONG_MODEL, OLLAMA_MODEL) if ollama_ok(n)), None)
+    if kind in ("html", "react") and code_model():   # code files go to the coding model when it's installed
+        name = code_model()
     if not name:
         yield {"type": "error", "text": "Making files needs an Ollama model. Run: brew services start ollama && ollama pull mistral"}
         return
     label = file_tools.KINDS[kind]["label"]
     verb = "Updating" if revise else "Writing"
     yield {"type": "status", "text": f"{verb} your {label} file..."}
-    words = []
+    words, live = [], {"text": ""}
 
-    def progress(n):
+    def progress(n, text=""):
         words.append(n)
+        live["text"] = text
     import threading
     out, err = {}, {}
 
@@ -294,9 +316,13 @@ def file_events(kind, ask, history, model_id, revise=False):
             err["e"] = e
     t = threading.Thread(target=work)
     t.start()
-    shown = 0
+    shown, sent = 0, 0
     while t.is_alive():
         t.join(0.5)
+        text = live["text"]
+        if len(text) > sent:   # the code so far, streamed into the side panel while it's written
+            yield {"type": "code", "kind": kind, "label": label, "delta": text[sent:]}
+            sent = len(text)
         if words and words[-1] != shown:
             shown = words[-1]
             yield {"type": "status", "text": f"{verb} your {label} file... {shown} words"}
@@ -631,6 +657,7 @@ VISION_SYSTEM = ("You are Fong AI, a helpful assistant made by Fong. Never call 
                  "Never say you can't create images: Fong AI can (the app does it when the user asks to make one).")
 MODEL_INFO = [
     {"id": "fong4", "name": "FongAI 4", "detail": "Our own model · creates images and videos"},
+    {"id": "fong-code", "name": "FongAI Code", "detail": "27B · best for code, apps and UI design · slower"},
     {"id": "mistral", "name": "FongAI 3.4", "detail": "Smart and fast · creates images and videos"},
     {"id": "fongai", "name": "FongAI 3.2", "detail": "Tiny 64M model trained here · mostly Chinese"},
 ]
@@ -800,6 +827,9 @@ def answer_ollama(messages, temperature, max_new, use_tools, name=OLLAMA_MODEL, 
     msgs = [{"role": "system", "content": SYSTEM_PROMPT.format(name=label) + extra}] + messages
     body = {"model": name, "messages": msgs, "stream": True,
             "options": {"temperature": temperature, "num_predict": max_new}}
+    if name == CODE_MODEL:   # Bonsai thinks for thousands of tokens the UI never shows: answer directly, room for whole files
+        body["think"] = False
+        body["options"]["num_predict"] = max(max_new, 4096)
     if use_tools:
         body["tools"] = MEDIA_TOOLS
     r = requests.post(f"{OLLAMA_URL}/api/chat", json=body, stream=True, timeout=600)
@@ -1059,7 +1089,12 @@ def chat_events(req: ChatRequest):
     if khmer:  # the Ollama models understand Khmer poorly: translate in, answer in English, translate back
         yield {"type": "status", "text": "Translating from Khmer..."}
         asked = translate(question, "English")
-    yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI 3.2..."}
+    coder = code_model() if CODE_ASK.search(asked) and not PICTURE_ASK_FOR_CODE.search(asked) else None
+    if coder and coder != ollama_name:   # a programming question: the coding model answers, whatever model is picked
+        ollama_name, mistral = coder, True
+        yield {"type": "status", "text": "Writing code..."}
+    else:
+        yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI 3.2..."}
     extra = VOICE_SYSTEM if req.voice else ""
     engine = (lambda *a: answer_ollama(*a, name=ollama_name, extra=extra)) if mistral else answer_minimind
     reply, first = "", True
@@ -1079,7 +1114,7 @@ def chat_events(req: ChatRequest):
 # ---------- routes ----------
 @app.get("/api/info")
 def info():
-    return {"device": DEVICE, "models": [m for m in MODEL_INFO if m["id"] != "fong4" or ollama_ok(FONG_MODEL)],
+    return {"device": DEVICE, "models": [m for m in MODEL_INFO if m["id"] not in ("fong4", "fong-code") or ollama_ok(OLLAMA_IDS[m["id"]])],
             "ollama": ollama_ok(), "ollama_model": OLLAMA_MODEL,
             "google_client_id": GOOGLE_CLIENT_ID or None}
 
