@@ -25,8 +25,10 @@ export default function useChats({ settings, onMedia, onFile }) {
   // `upto` (edit / retry): drop the message at that index and everything after it, then send `text` in its place.
   // `images`: photo data URLs attached to this message (sent to the vision model, kept with the message).
   // `edit`: images[0] is a generated picture to redraw with the changes in `text` ("add a person next to the car").
-  async function send(text, upto, images = [], edit = false) {
-    if (busy) return
+  // `voice`: voice mode: ask for a short spoken answer. Returns the reply text when it's done.
+  async function send(text, upto, images = [], edit = false, voice = false) {
+    if (busy) return ''
+    let reply = ''
     let id = currentId
     const cut = (msgs) => (upto == null ? msgs : msgs.slice(0, upto))
     const base = cut(chat?.messages || [])
@@ -54,9 +56,9 @@ export default function useChats({ settings, onMedia, onFile }) {
       await streamChat({
         messages: [...history, { role: 'user', content: text, ...(images.length && { images }), ...(edit && { edit: true }) }],
         model: settings.model, temperature: settings.temperature, max_new: settings.max_new,
-        use_tools: settings.use_tools, image_hd: settings.image_hd, top_k: settings.top_k,
+        use_tools: settings.use_tools, image_hd: settings.image_hd, top_k: settings.top_k, voice,
       }, (ev) => {
-        if (ev.type === 'text') patchLast(id, (m) => ({ ...m, content: m.content + ev.delta }))
+        if (ev.type === 'text') { reply += ev.delta; patchLast(id, (m) => ({ ...m, content: m.content + ev.delta })) }
         else if (ev.type === 'status') setStatus(ev.text)
         else if (ev.type === 'progress') setProgress({ kind: ev.kind, value: ev.value })
         else if (ev.type === 'sources') patchLast(id, (m) => ({ ...m, sources: ev.items }))
@@ -72,6 +74,7 @@ export default function useChats({ settings, onMedia, onFile }) {
     setStatus('')
     setProgress(null)
     if (gotMedia) onMedia?.()
+    return reply
   }
 
   const stop = () => abort.current?.abort()

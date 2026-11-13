@@ -29,8 +29,8 @@ import numpy as np
 import requests
 import torch
 from PIL import Image, ImageFilter
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -333,6 +333,38 @@ def load_whisper():
                     torch_dtype=torch.float16 if DEVICE != "cpu" else torch.float32, device=DEVICE)
 
 
+VOICE_SYSTEM = (" This is a spoken voice conversation: your reply will be read aloud. Answer in 1-3 short, natural "
+                "sentences, like talking to a friend. No markdown, lists, headings, emoji or code.")
+
+# Khmer text-to-speech for voice mode (Meta MMS-TTS, CC-BY-NC 4.0: non-commercial use only).
+# Other languages are spoken by the browser's own voices.
+KHMER_TTS_MODEL = os.environ.get("KHMER_TTS_MODEL", "facebook/mms-tts-khm")
+KHMER_SAY = {"fong ai": "ហ្វុង អេអាយ", "fongai": "ហ្វុង អេអាយ", "fong": "ហ្វុង", "ai": "អេអាយ"}   # it can't read Latin letters
+
+
+@lru_cache(maxsize=1)
+def load_khmer_tts():
+    from transformers import AutoTokenizer, VitsModel
+    return AutoTokenizer.from_pretrained(KHMER_TTS_MODEL), VitsModel.from_pretrained(KHMER_TTS_MODEL).eval()
+
+
+# whisper-large-v2 hears Khmer as Vietnamese/Thai, so Khmer voice uses a Whisper fine-tuned on Khmer speech
+KHMER_ASR_MODEL = os.environ.get("KHMER_ASR_MODEL", "seanghay/whisper-medium-khmer")
+
+
+@lru_cache(maxsize=1)
+def load_khmer_whisper():
+    from transformers import GenerationConfig, pipeline
+    p = pipeline("automatic-speech-recognition", model=KHMER_ASR_MODEL,
+                 dtype=torch.float16 if DEVICE != "cpu" else torch.float32, device=DEVICE)
+    # its generation config predates transformers' language/task options: use the matching OpenAI one
+    base = {"small": "openai/whisper-small", "base": "openai/whisper-base", "tiny": "openai/whisper-tiny",
+            "large": "openai/whisper-large-v2"}
+    size = next((v for k, v in base.items() if k in KHMER_ASR_MODEL.lower()), "openai/whisper-medium")
+    p.model.generation_config = GenerationConfig.from_pretrained(size)
+    return p
+
+
 @lru_cache(maxsize=1)
 def load_embedder():
     from sentence_transformers import SentenceTransformer
@@ -449,9 +481,9 @@ def run_tool(name, args, init_image=None, caption=None, show=True):
 
 
 # ---------- answer engines (generators of events) ----------
-def answer_ollama(messages, temperature, max_new, use_tools, name=OLLAMA_MODEL):
+def answer_ollama(messages, temperature, max_new, use_tools, name=OLLAMA_MODEL, extra=""):
     label = next((m["name"] for m in MODEL_INFO if OLLAMA_IDS.get(m["id"]) == name), "Fong AI")
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT.format(name=label)}] + messages
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT.format(name=label) + extra}] + messages
     body = {"model": name, "messages": msgs, "stream": True,
             "options": {"temperature": temperature, "num_predict": max_new}}
     if use_tools:
@@ -546,6 +578,7 @@ class ChatRequest(BaseModel):
     max_new: int = 512
     use_tools: bool = True
     image_hd: bool = False          # True: FLUX 1024px (minutes, better); False: sdxl-turbo 512px (seconds)
+    voice: bool = False             # voice mode: the reply is read aloud, so keep it short and spoken
     top_k: int = 3
 
 
@@ -671,7 +704,8 @@ def chat_events(req: ChatRequest):
         yield {"type": "status", "text": "Translating from Khmer..."}
         asked = translate(question, "English")
     yield {"type": "status", "text": "Thinking..." if mistral else "Loading FongAI 3.2..."}
-    engine = (lambda *a: answer_ollama(*a, name=ollama_name)) if mistral else answer_minimind
+    extra = VOICE_SYSTEM if req.voice else ""
+    engine = (lambda *a: answer_ollama(*a, name=ollama_name, extra=extra)) if mistral else answer_minimind
     reply, first = "", True
     for ev in engine(history + [{"role": "user", "content": with_context(asked, hits)}],
                      req.temperature, req.max_new, req.use_tools):
@@ -754,7 +788,8 @@ def chat(req: ChatRequest):
 
 
 @app.post("/api/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(file: UploadFile = File(...), language: str = Form("auto")):
+    """language: "auto" (any language, whisper-large-v2) or "km" (Khmer model)."""
     import soundfile as sf
     raw = await file.read()
     try:
@@ -767,8 +802,39 @@ async def transcribe(file: UploadFile = File(...)):
         import librosa
         data = librosa.resample(data, orig_sr=sr, target_sr=16000)
     with GPU_LOCK:
+        if language == "km":
+            out = load_khmer_whisper()({"raw": data, "sampling_rate": 16000}, chunk_length_s=30,
+                                       generate_kwargs={"task": "transcribe", "language": "khmer"})
+            # it was trained on word-split text ("មាន ពីរ ប្រភេទ"); written Khmer has no spaces between words
+            return {"text": re.sub(r"(?<=[ក-៿])\s+(?=[ក-៿])", "", out["text"]).strip()}
         out = load_whisper()({"raw": data, "sampling_rate": 16000}, chunk_length_s=30, generate_kwargs={"task": "transcribe"})
     return {"text": out["text"].strip()}
+
+
+class SpeakRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/speak")
+def speak(req: SpeakRequest):
+    """Khmer text -> WAV (16 kHz). Voice mode plays it."""
+    import soundfile as sf
+    text = req.text
+    for en, km in KHMER_SAY.items():
+        text = re.sub(rf"\b{en}\b", km, text, flags=re.I)
+    text = re.sub(r"[^\u1780-\u17ff\s។៖!?,.]", " ", text)   # the voice only knows Khmer letters
+    parts = [p.strip() for p in re.split(r"(?<=[។?!])\s*|\n+", text) if p.strip()]   # sentence by sentence
+    if not parts:
+        raise HTTPException(400, "Nothing to say in Khmer.")
+    tok, model = load_khmer_tts()
+    audio = []
+    with GPU_LOCK, torch.no_grad():
+        for p in parts[:12]:
+            audio.append(model(**tok(p, return_tensors="pt")).waveform[0].numpy())
+            audio.append(np.zeros(int(16000 * 0.25), dtype=np.float32))   # a short pause between sentences
+    buf = io.BytesIO()
+    sf.write(buf, np.concatenate(audio), model.config.sampling_rate, format="WAV")
+    return Response(buf.getvalue(), media_type="audio/wav")
 
 
 @app.get("/api/documents")

@@ -2,8 +2,7 @@
 import {
   Archive, ArrowRight, Zap, Download, ExternalLink, FileCode2, FileSpreadsheet, Presentation, Code2, Eye, ArrowUp, Check, ChevronDown, CircleHelp, CircleUser, Clapperboard, Copy, File, FileText, FolderOpen, House, Image, LogIn,
   LogOut, MessageCirclePlus, Mic, Monitor, Moon, PanelLeft, Pencil, Pin, PieChart, Play, Plus, RotateCw, Search, Share, SlidersHorizontal, Sparkles, Square, Sun,
-  Trash2, X,
-} from 'lucide-react'
+  Trash2, X, AudioLines, MicOff } from 'lucide-react'
 
 const ICONS = {
   newchat: MessageCirclePlus,
@@ -49,6 +48,8 @@ const ICONS = {
   fileCode: FileCode2,
   sheet: FileSpreadsheet,
   slides: Presentation,
+  voice: AudioLines,
+  micOff: MicOff,
 }
 
 export default function Icon({ name, size = 18, className = '' }) {

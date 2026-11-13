@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Sidebar from '@/components/layout/Sidebar.jsx'
 import Composer from '@/components/chat/Composer.jsx'
+import VoiceMode from '@/components/chat/VoiceMode.jsx'
 import Icon from '@/components/ui/Icon.jsx'
 import { Lightbox } from '@/components/media/Media.jsx'
 import { FilePreview } from '@/components/files/Files.jsx'
@@ -32,6 +33,7 @@ export default function App() {
   const [profile, setProfile] = useLocalStorage('profile', null)   // null = guest; signing in is optional
 
   const [view, setView] = useState(() => parsePath().view)
+  const [voice, setVoice] = useState(false)   // voice mode replaces the message box
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow())
   const [loginOpen, setLoginOpen] = useState(false)
   const [info, setInfo] = useState(null)
@@ -69,10 +71,14 @@ export default function App() {
   const newChat = () => { chats.startNew(); setPreview(null); go('home') }
   useShortcuts({ onNewChat: newChat, onSettings: () => setView('settings') })
 
-  const composer = (big) => (
-    <Composer big={big} busy={chats.busy} autoFocus onSend={(t, imgs, edit) => { setView('home'); chats.send(t, undefined, imgs, edit) }} onStop={chats.stop}
+  const composer = (big) => voice ? (
+    <VoiceMode lang={settings.voice_lang} onClose={() => setVoice(false)}
+      onSend={(t) => { setView('home'); return chats.send(t, undefined, [], false, true) }} />
+  ) : (
+    <Composer onVoice={() => setVoice(true)} big={big} busy={chats.busy} autoFocus onSend={(t, imgs, edit) => { setView('home'); chats.send(t, undefined, imgs, edit) }} onStop={chats.stop}
       models={info?.models || FALLBACK_MODELS} model={settings.model} onModel={(m) => setSettings({ model: m })} onDocs={setDocs}
-      hd={settings.image_hd} onHd={(v) => setSettings({ image_hd: v })} />
+      hd={settings.image_hd} onHd={(v) => setSettings({ image_hd: v })}
+      voiceLang={settings.voice_lang} onVoiceLang={(v) => setSettings({ voice_lang: v })} />
   )
 
   const pages = {

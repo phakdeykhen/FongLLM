@@ -1,6 +1,6 @@
 // App-wide constants.
 
-export const DEFAULT_SETTINGS = { model: 'fong4', temperature: 0.7, max_new: 512, use_tools: true, image_hd: false, top_k: 3, theme: 'system' }
+export const DEFAULT_SETTINGS = { model: 'fong4', temperature: 0.7, max_new: 512, use_tools: true, image_hd: false, top_k: 3, theme: 'system', voice_lang: 'auto' }
 
 // Shown until /api/info answers; the server's list wins.
 export const FALLBACK_MODELS = [

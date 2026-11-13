@@ -24,7 +24,7 @@ function shrink(f) {
   })
 }
 
-export default function Composer({ big, busy, onSend, onStop, models, model, onModel, onDocs, autoFocus, hd, onHd }) {
+export default function Composer({ big, busy, onSend, onStop, models, model, onModel, onDocs, autoFocus, hd, onHd, voiceLang = 'auto', onVoiceLang, onVoice }) {
   const [text, setText] = useState('')
   const [note, setNote] = useState('')
   const [recording, setRecording] = useState(null) // stop() function while recording
@@ -91,7 +91,7 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
       }
       if (audio) {
         setNote(`Transcribing ${audio.name}…`)
-        const t = await transcribe(audio, audio.name)
+        const t = await transcribe(audio, audio.name, voiceLang)
         setText((old) => (old ? old + ' ' : '') + t)
         setNote('')
       }
@@ -105,9 +105,9 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
     if (recording) {
       const stop = recording
       setRecording(null)
-      setNote('Transcribing with Whisper…')
+      setNote(voiceLang === 'km' ? 'កំពុងស្តាប់… Transcribing Khmer…' : 'Transcribing with Whisper…')
       try {
-        const t = await transcribe(await stop())
+        const t = await transcribe(await stop(), 'voice.wav', voiceLang)
         setText((old) => (old ? old + ' ' : '') + t)
         setNote('')
         ta.current?.focus()
@@ -182,11 +182,22 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
             )}
           </div>
         )}
+        {onVoiceLang && (
+          <button className={`hd-btn ${voiceLang === 'km' ? 'on' : ''}`} onClick={() => onVoiceLang(voiceLang === 'km' ? 'auto' : 'km')}
+            aria-pressed={voiceLang === 'km'}
+            title={voiceLang === 'km' ? 'Voice: Khmer. Click to switch to other languages.' : 'Voice: English and other languages. Click for Khmer.'}>
+            {voiceLang === 'km' ? 'ខ្មែរ' : 'EN'}
+          </button>
+        )}
         <button className={`icon-btn ${recording ? 'rec' : ''}`} title={recording ? 'Stop recording' : 'Speak your question'}
           aria-label="Voice input" onClick={toggleMic}>
           <Icon name="mic" size={19} />
         </button>
-        {busy ? (
+        {onVoice && !busy && !text.trim() && !pics.length ? (
+          <button className="send" onClick={onVoice} title="Voice mode: talk with Fong AI" aria-label="Start voice mode">
+            <Icon name="voice" size={18} />
+          </button>
+        ) : busy ? (
           <button className="send" onClick={onStop} title="Stop" aria-label="Stop"><Icon name="stop" size={16} /></button>
         ) : (
           <button className="send" onClick={send} disabled={!text.trim() && !pics.length} title="Send" aria-label="Send"><Icon name="arrowUp" size={18} /></button>

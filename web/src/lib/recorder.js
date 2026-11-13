@@ -1,12 +1,21 @@
 // Records the microphone straight to a 16 kHz mono WAV blob, so the backend can read it without ffmpeg.
 
-export async function startRecording() {
+// onLevel(rms): called ~10x a second with the loudness (voice mode uses it to hear when you stop talking).
+export async function startRecording(onLevel) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const ctx = new AudioContext()
   const source = ctx.createMediaStreamSource(stream)
   const node = ctx.createScriptProcessor(4096, 1, 1)
   const chunks = []
-  node.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))
+  node.onaudioprocess = (e) => {
+    const d = new Float32Array(e.inputBuffer.getChannelData(0))
+    chunks.push(d)
+    if (onLevel) {
+      let sum = 0
+      for (let i = 0; i < d.length; i++) sum += d[i] * d[i]
+      onLevel(Math.sqrt(sum / d.length))
+    }
+  }
   source.connect(node)
   node.connect(ctx.destination)
 

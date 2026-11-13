@@ -20,9 +20,18 @@ export function uploadDocuments(files) {
   return fetch('/api/documents', { method: 'POST', body: form }).then(json)
 }
 
-export function transcribe(blob, name = 'voice.wav') {
+// Khmer text -> spoken WAV blob (voice mode).
+export async function speakKhmer(text) {
+  const res = await fetch('/api/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+  if (!res.ok) throw new Error(`speak failed (${res.status})`)
+  return res.blob()
+}
+
+// language: 'auto' (any language) or 'km' (Khmer speech model)
+export function transcribe(blob, name = 'voice.wav', language = 'auto') {
   const form = new FormData()
   form.append('file', blob, name)
+  form.append('language', language)
   return fetch('/api/transcribe', { method: 'POST', body: form }).then(json).then((d) => d.text)
 }
 
