@@ -70,8 +70,14 @@ export default function App() {
   }, [view, chats.currentId, chatGone])
 
   useEffect(() => {
-    getInfo().then((i) => { setInfo(i); setGoogleClientId(i.google_client_id) }).catch(() => setInfo({ error: true }))
+    // Keep retrying while the server is down, so the "Can't reach" banner clears by itself once it's back.
+    let timer, stopped = false
+    const load = () => getInfo()
+      .then((i) => { if (!stopped) { setInfo(i); setGoogleClientId(i.google_client_id) } })
+      .catch(() => { if (!stopped) { setInfo({ error: true }); timer = setTimeout(load, 3000) } })
+    load()
     refreshRecent()
+    return () => { stopped = true; clearTimeout(timer) }
   }, [refreshRecent])
   useEffect(() => { refreshRecent() }, [profile?.token, refreshRecent])   // signing in or out shows that person's images
 
