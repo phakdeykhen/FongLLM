@@ -1,4 +1,17 @@
 // Thin client for the FastAPI backend (server/api.py).
+import { load, save } from '@/lib/storage.js'
+
+// Who is asking: the signed-in account's token, else a random id this browser keeps as a guest.
+// The server uses it so each person only sees the images and videos they made.
+function guestId() {
+  let id = load('guest', null)
+  if (!id) { id = (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9]/g, ''); save('guest', id) }
+  return id
+}
+function who() {
+  const token = load('profile', null)?.token
+  return { 'X-Fong-Guest': guestId(), ...(token && { Authorization: `Bearer ${token}` }) }
+}
 
 async function json(res) {
   if (!res.ok) {
@@ -10,7 +23,7 @@ async function json(res) {
 }
 
 export const getInfo = () => fetch('/api/info').then(json)
-export const listMedia = (kind) => fetch(`/api/media${kind ? `?kind=${kind}` : ''}`).then(json).then((d) => d.items)
+export const listMedia = (kind) => fetch(`/api/media${kind ? `?kind=${kind}` : ''}`, { headers: who() }).then(json).then((d) => d.items)
 export const listDocuments = () => fetch('/api/documents').then(json)
 export const deleteDocument = (name) => fetch(`/api/documents/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(json)
 
@@ -39,7 +52,7 @@ export function transcribe(blob, name = 'voice.wav', language = 'auto') {
 export async function streamChat(body, onEvent, signal) {
   const res = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...who() },
     body: JSON.stringify(body),
     signal,
   })
@@ -68,7 +81,7 @@ export function googleLogin(credential) {
 }
 
 export function makeImage(prompt, hd = false) {
-  return fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, hd }) }).then(json)
+  return fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json', ...who() }, body: JSON.stringify({ prompt, hd }) }).then(json)
 }
 
 

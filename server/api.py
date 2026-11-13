@@ -29,7 +29,7 @@ import numpy as np
 import requests
 import torch
 from PIL import Image, ImageFilter
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1156,8 +1156,21 @@ class ImageRequest(BaseModel):
     hd: bool = False
 
 
+def request_owner(authorization, guest):
+    from server import auth_api as _auth   # imported late: auth_api is wired up at the bottom of this file
+    return _auth.owner_of_request(authorization, guest)
+
+
+def claim_media(item, owner):
+    """Records who made a generated image/video, so only they see it in their lists."""
+    from server import auth_api as _auth
+    name = (item or {}).get("name") or os.path.basename((item or {}).get("url", ""))
+    if name:
+        _auth.set_media_owner(name, owner)
+
+
 @app.post("/api/image")
-def make_image(body: ImageRequest):
+def make_image(body: ImageRequest, authorization: str | None = Header(None), x_fong_guest: str | None = Header(None)):
     """Generates one image directly (Images page). Same model and folder as /image in chat."""
     if not body.prompt.strip():
         raise HTTPException(400, "Describe the image you want.")
@@ -1169,11 +1182,13 @@ def make_image(body: ImageRequest):
         raise HTTPException(500, (result or {}).get("error", "Image generation failed."))
     item = media_item(result["path"], "image", result.get("prompt"))
     item["seconds"] = result.get("seconds")
+    claim_media(item, request_owner(authorization, x_fong_guest))
     return item
 
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, authorization: str | None = Header(None), x_fong_guest: str | None = Header(None)):
+    owner = request_owner(authorization, x_fong_guest)
     if not req.messages or req.messages[-1].get("role") != "user":
         raise HTTPException(400, "the last message must be from the user")
 
@@ -1181,6 +1196,8 @@ def chat(req: ChatRequest):
         with GPU_LOCK:
             try:
                 for ev in chat_events(req):
+                    if ev.get("type") == "media":
+                        claim_media(ev.get("item"), owner)
                     yield json.dumps(ev, ensure_ascii=False) + "\n"
             except Exception as e:
                 yield json.dumps({"type": "error", "text": f"{type(e).__name__}: {e}"}) + "\n"
@@ -1264,10 +1281,12 @@ def delete_document(name: str):
 
 
 @app.get("/api/media")
-def list_media(kind: str | None = None):
+def list_media(kind: str | None = None, authorization: str | None = Header(None), x_fong_guest: str | None = Header(None)):
+    """Only the caller's own images/videos (signed-in account, or this guest browser)."""
     os.makedirs(MEDIA_DIR, exist_ok=True)
+    mine = auth_api.media_names_of(request_owner(authorization, x_fong_guest))
     items = [media_item(os.path.join(MEDIA_DIR, n)) for n in os.listdir(MEDIA_DIR)
-             if n.startswith(("image_", "video_")) and n.endswith((".png", ".mp4"))]
+             if n in mine and n.startswith(("image_", "video_")) and n.endswith((".png", ".mp4"))]
     if kind:
         items = [i for i in items if i["type"] == kind]
     return {"items": sorted(items, key=lambda i: i["name"], reverse=True)}

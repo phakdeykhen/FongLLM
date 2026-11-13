@@ -73,6 +73,7 @@ export default function App() {
     getInfo().then((i) => { setInfo(i); setGoogleClientId(i.google_client_id) }).catch(() => setInfo({ error: true }))
     refreshRecent()
   }, [refreshRecent])
+  useEffect(() => { refreshRecent() }, [profile?.token, refreshRecent])   // signing in or out shows that person's images
 
   const go = (next) => { setView(next); if (isNarrow()) setSidebarOpen(false) }
   const newChat = () => { chats.startNew(); setPreview(null); go('home') }

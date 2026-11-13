@@ -55,6 +55,9 @@ def _db():
         CREATE TABLE IF NOT EXISTS device_logins (
             device_hash TEXT PRIMARY KEY, user_code TEXT UNIQUE NOT NULL, expires REAL NOT NULL,
             user_id TEXT, done INTEGER NOT NULL DEFAULT 0);
+        -- who made each generated image/video (file name under out/media): "u:<user id>" or "g:<guest browser id>"
+        CREATE TABLE IF NOT EXISTS media_owners (name TEXT PRIMARY KEY, owner TEXT NOT NULL, created REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS media_owners_owner ON media_owners(owner);
     """)
     if "phone" not in [r["name"] for r in con.execute("PRAGMA table_info(users)")]:   # older database
         con.execute("ALTER TABLE users ADD COLUMN phone TEXT")
@@ -357,3 +360,33 @@ def device_poll(body: DeviceCode):
         db().commit()
         user = db().execute("SELECT * FROM users WHERE id = ?", (row["user_id"],)).fetchone()
     return {"status": "ok", "token": new_session(user["id"]), "user": public(user)}
+
+
+# ---------- who owns which generated image/video ----------
+# Signed-in people own what they make under their account; guests under a random id their browser keeps
+# (sent as "X-Fong-Guest"). Each person only lists their own media.
+_GUEST_ID = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+def owner_of_request(authorization, guest):
+    """'u:<user id>' when signed in, else 'g:<guest id>', else None (no identity: sees nothing, owns nothing)."""
+    user = user_from_token(authorization)
+    if user:
+        return f"u:{user['id']}"
+    if guest and _GUEST_ID.match(guest):
+        return f"g:{guest}"
+    return None
+
+
+def set_media_owner(name, owner):
+    if not owner:
+        return
+    with _lock:
+        db().execute("INSERT OR REPLACE INTO media_owners VALUES (?, ?, ?)", (name, owner, time.time()))
+        db().commit()
+
+
+def media_names_of(owner):
+    if not owner:
+        return set()
+    return {r["name"] for r in db().execute("SELECT name FROM media_owners WHERE owner = ?", (owner,))}
