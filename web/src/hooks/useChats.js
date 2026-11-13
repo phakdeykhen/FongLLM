@@ -24,7 +24,8 @@ export default function useChats({ settings, onMedia, onFile }) {
 
   // `upto` (edit / retry): drop the message at that index and everything after it, then send `text` in its place.
   // `images`: photo data URLs attached to this message (sent to the vision model, kept with the message).
-  async function send(text, upto, images = []) {
+  // `edit`: images[0] is a generated picture to redraw with the changes in `text` ("add a person next to the car").
+  async function send(text, upto, images = [], edit = false) {
     if (busy) return
     let id = currentId
     const cut = (msgs) => (upto == null ? msgs : msgs.slice(0, upto))
@@ -51,7 +52,7 @@ export default function useChats({ settings, onMedia, onFile }) {
     let gotMedia = false
     try {
       await streamChat({
-        messages: [...history, { role: 'user', content: text, ...(images.length && { images }) }],
+        messages: [...history, { role: 'user', content: text, ...(images.length && { images }), ...(edit && { edit: true }) }],
         model: settings.model, temperature: settings.temperature, max_new: settings.max_new,
         use_tools: settings.use_tools, image_hd: settings.image_hd, top_k: settings.top_k,
       }, (ev) => {

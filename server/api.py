@@ -88,6 +88,8 @@ POSTER_ASK = re.compile(r"\b(poster|flyer|banner|brochure|cover|thumbnail|ad|adv
 # "modify / edit / fix this" with a photo: change that picture (img2img) instead of drawing a new one from scratch
 EDIT_ASK = re.compile(r"\b(modify|edit|change|fix|improve|update|enhance|adjust|redo|retouch|recolou?r|turn (it|this))\b|"
                       r"\bmake (it|this)\b|កែ|修改|改", re.I)
+# "add a person / remove the arrow" with a photo: also a redraw (kept out of EDIT_ASK so "create a poster, add $10" stays a poster)
+ADD_ASK = re.compile(r"\b(add|remove|replace|erase|delete|put|insert|swap)\b|បន្ថែម|ដក|添加|加上|去掉|删除", re.I)
 EDIT_PROMPT_WRITER = ("Write ONE English prompt (at most 60 words) for an image generator that will redraw the attached image with the "
                       "user's changes applied. Describe the final picture: layout, main objects, art style, colors, lighting, "
                       "background. Keep everything the user didn't ask to change. Output only the prompt, no quotes or explanations."
@@ -566,12 +568,14 @@ def chat_events(req: ChatRequest):
             return
         yield {"type": "status", "text": "Looking at your photo..."}
         asked = translate(question, "English") if is_khmer(question) else question
+        # The Edit button on a generated image: always redraw that picture with the requested changes
+        edit_image = bool(req.messages[-1].get("edit"))
         # "promotion ... $10" + a product photo is a new sale poster even without a create verb (typos like "creaet")
-        if req.use_tools and PROMO_ASK.search(asked) and not EDIT_ASK.search(asked) and (
+        if req.use_tools and not edit_image and PROMO_ASK.search(asked) and not EDIT_ASK.search(asked) and (
                 CREATE_VERB.search(asked) or POSTER_ASK.search(asked) or promo_poster.find_price(asked)):
             yield from promo_events(images[0], asked, history)
             return
-        if EDIT_ASK.search(asked) or POSTER_ASK.search(asked):   # posters: swap the words, don't redraw
+        if not edit_image and (EDIT_ASK.search(asked) or POSTER_ASK.search(asked)):   # posters: swap the words, don't redraw
             photo = Image.open(io.BytesIO(base64.b64decode(images[0]))).convert("RGB")
             yield {"type": "status", "text": "Reading the text on your poster..."}
             lines = poster_text.find_text(photo)
@@ -580,9 +584,9 @@ def chat_events(req: ChatRequest):
                 POSTER.update(image=photo, lines=lines, changes={})
                 yield from poster_events(asked, [])
                 return
-        if wants_image(question):   # "make a logo like this": describe its style, then draw a new one
-            asked = translate(question, "English") if is_khmer(question) else question
-            edit = bool(EDIT_ASK.search(asked))
+        change_ask = req.use_tools and not HOW_TO.search(question) and (EDIT_ASK.search(asked) or ADD_ASK.search(asked))
+        if edit_image or wants_image(question) or change_ask:   # "make a logo like this" / "add a dog to it"
+            edit = bool(edit_image or change_ask)
             writer = EDIT_PROMPT_WRITER if edit else VISION_PROMPT_WRITER
             draw = "".join(ev["delta"] for ev in answer_vision(
                 [{"role": "user", "content": writer + asked}], 0.4, 160, images)).strip().strip('"')

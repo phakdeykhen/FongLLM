@@ -30,10 +30,26 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
   const [recording, setRecording] = useState(null) // stop() function while recording
   const [menu, setMenu] = useState(false)
   const [pics, setPics] = useState([]) // attached photos (data URLs) for the next message
+  const [editing, setEditing] = useState(false) // pics[0] is a generated image to redraw with the user's changes
   const ta = useRef(null)
   const file = useRef(null)
 
   useEffect(() => { if (autoFocus) ta.current?.focus() }, [autoFocus])
+  useEffect(() => { // "Edit" on a generated image: attach it and ask what to change
+    async function onEditImage(e) {
+      try {
+        const blob = await (await fetch(e.detail)).blob()
+        setPics([await shrink(blob)])
+        setEditing(true)
+        setNote('')
+        ta.current?.focus()
+      } catch {
+        setNote("Couldn't load that image for editing.")
+      }
+    }
+    window.addEventListener('fong:edit-image', onEditImage)
+    return () => window.removeEventListener('fong:edit-image', onEditImage)
+  }, [])
   useEffect(() => { // grow with the text, like Claude's box
     const el = ta.current
     if (!el) return
@@ -48,11 +64,12 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
   }, [menu])
 
   function send() {
-    const t = text.trim() || (pics.length ? 'What is in this photo?' : '')
+    const t = text.trim() || (pics.length && !editing ? 'What is in this photo?' : '')
     if (!t || busy) return
-    onSend(t, pics)
+    onSend(t, pics, editing && pics.length > 0)
     setText('')
     setPics([])
+    setEditing(false)
     setNote('')
   }
 
@@ -119,14 +136,17 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
           {pics.map((p, i) => (
             <div key={i} className="composer-pic">
               <img src={p} alt={`Attached photo ${i + 1}`} />
-              <button aria-label="Remove photo" title="Remove" onClick={() => setPics(pics.filter((_, j) => j !== i))}>
+              <button aria-label="Remove photo" title="Remove"
+                onClick={() => { setPics(pics.filter((_, j) => j !== i)); if (i === 0) setEditing(false) }}>
                 <Icon name="x" size={12} />
               </button>
             </div>
           ))}
+          {editing && <span className="composer-note">Editing this image: say what to change or add</span>}
         </div>
       )}
-      <textarea ref={ta} rows={1} value={text} placeholder={big ? 'How can I help you today?' : 'Reply to Fong AI…'}
+      <textarea ref={ta} rows={1} value={text}
+        placeholder={editing ? 'e.g. add a person standing next to the car, make it sunset…' : big ? 'How can I help you today?' : 'Reply to Fong AI…'}
         onChange={(e) => setText(e.target.value)}
         onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files) } }}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} />

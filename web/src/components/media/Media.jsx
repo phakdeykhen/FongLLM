@@ -41,6 +41,13 @@ export function MediaView({ item, onOpen }) {
         : <img src={item.url} alt={item.prompt || 'Generated image'} onClick={() => onOpen?.(item)} />}
       <div className="msg-media-cap">
         <span>{item.prompt}{item.seconds ? ` · ${item.seconds}s` : ''}</span>
+        {item.type !== 'video' && (
+          // The Composer picks this up: it attaches the picture and the next message says what to change or add.
+          <button className="msg-action" title="Edit this image" aria-label="Edit this image"
+            onClick={() => window.dispatchEvent(new CustomEvent('fong:edit-image', { detail: item.url }))}>
+            <Icon name="rename" size={15} />
+          </button>
+        )}
         <DownloadButton item={item} />
       </div>
     </div>

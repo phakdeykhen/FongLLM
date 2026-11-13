@@ -70,7 +70,7 @@ export default function App() {
   useShortcuts({ onNewChat: newChat, onSettings: () => setView('settings') })
 
   const composer = (big) => (
-    <Composer big={big} busy={chats.busy} autoFocus onSend={(t, imgs) => { setView('home'); chats.send(t, undefined, imgs) }} onStop={chats.stop}
+    <Composer big={big} busy={chats.busy} autoFocus onSend={(t, imgs, edit) => { setView('home'); chats.send(t, undefined, imgs, edit) }} onStop={chats.stop}
       models={info?.models || FALLBACK_MODELS} model={settings.model} onModel={(m) => setSettings({ model: m })} onDocs={setDocs}
       hd={settings.image_hd} onHd={(v) => setSettings({ image_hd: v })} />
   )
