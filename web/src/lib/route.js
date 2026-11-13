@@ -1,7 +1,7 @@
 // Page <-> URL: "/" home, "/chat/<id>" an open chat, "/images", "/documents", ... so a refresh or a shared link
 // lands on the same place, and the browser's Back / Forward buttons work.
 const PATHS = { search: 'search', images: 'images', videos: 'videos', docs: 'documents', settings: 'settings',
-  usage: 'usage', profile: 'profile', help: 'help' }
+  usage: 'usage', profile: 'profile', help: 'help', cli: 'cli-login' }
 const VIEWS = Object.fromEntries(Object.entries(PATHS).map(([v, p]) => [p, v]))
 
 export function pathFor(view, chatId) {

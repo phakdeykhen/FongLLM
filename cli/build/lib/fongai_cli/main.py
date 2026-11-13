@@ -3,11 +3,14 @@
   fong                      start a chat in the current folder
   fong "add tests for x"    do one task and exit
   fong --yes ...            don't ask before writing files or running commands
+  fong login                sign in to your FongAI account (opens the browser; no key needed)
+  fong logout / fong whoami
 
 Settings (flags > environment > ~/.fongai/config.json > defaults):
   FONG_BASE_URL  default http://localhost:11434/v1   (Ollama; any OpenAI-compatible API works)
   FONG_MODEL     default fongai
-  FONG_API_KEY   only needed for hosted APIs
+  FONG_API_KEY   your key for a Fong AI server
+--base-url and --api-key are saved, so you only type them once.
 """
 import argparse
 import json
@@ -16,11 +19,11 @@ import platform
 import re
 import sys
 
-from . import __version__, tools
+from . import __version__, account, tools
 from .llm import LLMError, chat_stream
 
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".fongai", "config.json")
-DEFAULTS = {"base_url": "http://localhost:11434/v1", "model": "fongai", "api_key": ""}
+DEFAULTS = {"base_url": "http://localhost:11434/v1", "model": "fongai", "api_key": "", "account": ""}
 MAX_STEPS = 40   # tool rounds per request, so a confused model can't loop forever
 
 if os.name == "nt":
@@ -232,7 +235,30 @@ def main():
     p.add_argument("-y", "--yes", action="store_true", help="don't ask before edits and commands")
     p.add_argument("-v", "--version", action="version", version=f"fong {__version__}")
     args = p.parse_args()
-    session = Session(load_config(args), args.yes)
+    cfg = load_config(args)
+    if args.base_url or args.api_key:   # remember the server and key, so users type them only once
+        saved = {k: v for k, v in cfg.items() if k in DEFAULTS}
+        save_config(saved)
+    if args.prompt in (["login"], ["logout"], ["whoami"]):   # account commands
+        try:
+            if args.prompt == ["login"]:
+                done = account.login(cfg, lambda m: print(m, flush=True))
+                if done:
+                    save_config({k: v for k, v in done.items() if k in DEFAULTS})
+                    print(c(GREEN, f"Signed in as {done['account']}.") + " Now just type  fong")
+                sys.exit(0 if done else 1)
+            if args.prompt == ["logout"]:
+                save_config({k: v for k, v in account.logout(cfg).items() if k in DEFAULTS})
+                print("Signed out on this computer.")
+                sys.exit(0)
+            user = account.whoami(cfg)
+            print(f"{user['name']} <{user.get('email') or user.get('phone') or ''}> on {account.server_root(cfg['base_url'])}"
+                  if user else "Not signed in. Run  fong login")
+            sys.exit(0)
+        except RuntimeError as e:
+            print(c(RED, str(e)))
+            sys.exit(1)
+    session = Session(cfg, args.yes)
     if args.prompt:
         try:
             session.run(" ".join(args.prompt))

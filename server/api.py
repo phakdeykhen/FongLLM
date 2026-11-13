@@ -1090,7 +1090,7 @@ class GoogleLogin(BaseModel):
 
 @app.post("/api/auth/google")
 def auth_google(body: GoogleLogin):
-    """Checks a Google sign-in and returns the profile. Nothing is stored on the server."""
+    """Checks a Google sign-in, then signs in to (or creates) the FongAI account for it."""
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(400, "Google sign-in isn't set up. Start the server with GOOGLE_CLIENT_ID=<your client id>.")
     try:  # Google checks the signature and expiry for us
@@ -1100,8 +1100,55 @@ def auth_google(body: GoogleLogin):
     t = r.json() if r.ok else {}
     if not r.ok or t.get("aud") != GOOGLE_CLIENT_ID or t.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
         raise HTTPException(401, "Google sign-in failed. Please try again.")
-    return {"name": t.get("name") or t.get("email", "").split("@")[0], "email": t.get("email"),
-            "picture": t.get("picture"), "provider": "google"}
+    if not t.get("sub") or t.get("email_verified") not in ("true", True):
+        raise HTTPException(401, "Google didn't confirm this email address. Try another Google account.")
+    return auth_api.google_user(t["sub"], t.get("email"), t.get("name"), t.get("picture"))   # {user, token}
+
+
+class TitleRequest(BaseModel):
+    text: str           # the user's first message
+    reply: str = ""     # the start of the answer (helps the model see the topic)
+
+
+TITLE_PROMPT = ("Write a short title for this chat: 2 to 6 words, Title Case, in English. Name the topic, like "
+                "'Laravel API Authentication' or 'Tesla Car Game In Python'. No quotes, no period, no emoji. "
+                "Reply with the title only.\n\nUser: {text}\n\nAssistant: {reply}")
+FILLER = re.compile(r"^\s*(please|pls|plz|can you|could you|help( me)?|i want( to)?|i need|hey|hi)\b[\s,]*", re.I)
+
+
+def plain_title(text):
+    """No model: the first message, cleaned: 'please creaet poster for my shop' -> 'Creaet Poster For My Shop'."""
+    t = text.strip().splitlines()[0] if text.strip() else "New chat"
+    while FILLER.search(t):
+        t = FILLER.sub("", t, count=1)
+    words = (t or text).split()[:6]
+    return " ".join(w if any(ch.isupper() for ch in w[1:]) or not w.isascii() else w.capitalize() for w in words)[:60] or "New chat"
+
+
+@app.post("/api/title")
+def make_title(body: TitleRequest):
+    """A short chat title, like the ones other assistants show in their sidebar."""
+    if is_khmer(body.text):
+        # The chat models can't read Khmer, and translating there and back takes minutes on a 16 GB Mac,
+        # so a Khmer chat keeps its first words as the title (already readable Khmer).
+        t = " ".join(body.text.split())
+        return {"title": t if len(t) <= 40 else t[:40].rstrip() + "…"}
+    name = next((n for n in (FONG_MODEL, OLLAMA_MODEL) if ollama_ok(n)), None)
+    khmer, text = False, body.text
+    title = ""
+    if name:
+        try:
+            r = requests.post(f"{OLLAMA_URL}/api/chat", timeout=60, json={
+                "model": name, "stream": False, "options": {"temperature": 0.2, "num_predict": 24},
+                "messages": [{"role": "user", "content": TITLE_PROMPT.format(text=text[:600], reply="" if khmer else body.reply[:400])}]})
+            title = r.json().get("message", {}).get("content", "") if r.ok else ""
+        except requests.RequestException:
+            title = ""
+    title = re.sub(r"^(title|chat title)\s*:\s*", "", title.strip().splitlines()[0] if title.strip() else "", flags=re.I)
+    title = title.strip(" \"'`*#.").strip()
+    if not title or len(title) > 70:
+        return {"title": plain_title(body.text)}
+    return {"title": title[:60]}
 
 
 class ImageRequest(BaseModel):
@@ -1225,6 +1272,11 @@ def list_media(kind: str | None = None):
         items = [i for i in items if i["type"] == kind]
     return {"items": sorted(items, key=lambda i: i["name"], reverse=True)}
 
+
+from server.coding_api import router as coding_router  # noqa: E402  (fong CLI: /v1/chat/completions)
+app.include_router(coding_router)
+from server import auth_api  # noqa: E402  (accounts: sign up / sign in, SQLite)
+app.include_router(auth_api.router)
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")

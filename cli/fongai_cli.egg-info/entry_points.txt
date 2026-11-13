@@ -1,2 +1,3 @@
 [console_scripts]
 fong = fongai_cli.main:main
+fongai = fongai_cli.main:main

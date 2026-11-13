@@ -16,11 +16,12 @@ import SettingsPage from '@/pages/SettingsPage.jsx'
 import ProfilePage from '@/pages/ProfilePage.jsx'
 import UsagePage from '@/pages/UsagePage.jsx'
 import HelpPage from '@/pages/HelpPage.jsx'
+import CliLoginPage from '@/pages/CliLoginPage.jsx'
 import useLocalStorage from '@/hooks/useLocalStorage.js'
 import useTheme from '@/hooks/useTheme.js'
 import useShortcuts from '@/hooks/useShortcuts.js'
 import useChats from '@/hooks/useChats.js'
-import { getInfo, listMedia } from '@/api/client.js'
+import { authLogout, authMe, getInfo, listMedia } from '@/api/client.js'
 import { DEFAULT_SETTINGS, FALLBACK_MODELS } from '@/lib/constants.js'
 import { parsePath, pathFor } from '@/lib/route.js'
 import { setGoogleClientId } from '@/lib/google.js'
@@ -37,6 +38,11 @@ export default function App() {
   const [voice, setVoice] = useState(false)   // voice mode replaces the message box
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow())
   const [loginOpen, setLoginOpen] = useState(false)
+  useEffect(() => {   // a saved session that expired or was signed out elsewhere: back to guest
+    if (!profile?.token) return
+    authMe(profile.token).then(({ user }) => setProfile((p) => (p ? { ...p, ...user } : p)))
+      .catch((e) => { if (/not signed in/i.test(e.message)) setProfile(null) })
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   const [info, setInfo] = useState(null)
   const [docs, setDocs] = useState({ documents: [], passages: 0 })
   const [recent, setRecent] = useState([])
@@ -91,6 +97,7 @@ export default function App() {
     usage: () => <UsagePage chats={chats.chats} docs={docs} />,
     profile: () => (profile ? <ProfilePage profile={profile} setProfile={setProfile} /> : null),
     help: () => <HelpPage />,
+    cli: () => <CliLoginPage profile={profile} onLogin={() => setLoginOpen(true)} />,
     home: () => (chats.chat?.messages.length
       ? <ChatPage chat={chats.chat} busy={chats.busy && chats.busyId === chats.chat.id} status={chats.status} progress={chats.progress} composer={composer(false)} onOpenImage={setLightbox}
           onEdit={(text, i, imgs) => chats.send(text, i, imgs)} onOpenFile={setPreview} activeFile={preview}
@@ -109,7 +116,7 @@ export default function App() {
         chats={chats.chats} currentId={chats.currentId} profile={profile}
         onNav={(v) => { if (v === 'home') chats.setCurrentId(null); go(v) }}
         onNew={newChat} onOpen={(id) => { chats.setCurrentId(id); setPreview(null); go('home') }} onDelete={chats.remove}
-        onLogin={() => setLoginOpen(true)} onLogout={() => { setProfile(null); if (view === 'profile') setView('home') }} />
+        onLogin={() => setLoginOpen(true)} onLogout={() => { if (profile?.token) authLogout(profile.token); setProfile(null); if (view === 'profile') setView('home') }} />
       <main className="main">
         {!sidebarOpen && (
           <button className="icon-btn open-side" onClick={() => setSidebarOpen(true)} title="Open sidebar" aria-label="Open sidebar">

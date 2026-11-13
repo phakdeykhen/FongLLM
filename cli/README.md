@@ -6,39 +6,51 @@ It works on **macOS, Linux and Windows**. It needs only Python 3.9 or newer and 
 
 ---
 
-## 1. Install
+## 1. Install (users)
 
-You need two things: the model server (Ollama with the `fongai` model) and the CLI.
-
-### Model server
-
-| OS | Command |
-|---|---|
-| macOS | `brew install ollama && brew services start ollama` |
-| Linux | `curl -fsSL https://ollama.com/install.sh \| sh` |
-| Windows | Download the installer from https://ollama.com/download |
-
-Then load the Fong AI model. From the FongAI repo:
+Users install only the CLI. The model runs on the Fong AI server, so they don't need Ollama, a GPU or a large download.
 
 ```bash
-cd finetune && ollama create fongai -f Modelfile
+pip install pipx
+pipx install ./cli          # after publishing: pipx install fongai-cli
 ```
 
-### CLI
-
-Install it with `pipx`, which puts `fong` on your PATH on every OS:
+Sign in once with your FongAI account. The browser opens; sign in with Google and click **Connect**:
 
 ```bash
-pipx install ./cli          # from the FongAI repo folder
-# or, without pipx:
-pip install ./cli
+fong login --base-url https://YOUR-FONG-SERVER/v1   # on the server's own computer: just  fong login
+fong whoami                                          # which account this terminal uses
+fong logout                                          # end this terminal's session
 ```
 
-Check it:
+No API key to copy: the terminal gets its own session from your account (30 days). Admin keys (below) still work for scripts.
+
+After that, just type `fong`.
+
+## 1b. Run the server (admin)
+
+On the server machine, start Ollama with the `fongai` model and the FongAI backend:
 
 ```bash
-fong --version
+cd finetune && ollama create fongai -f Modelfile && cd ..
+source .venv/bin/activate
+uvicorn server.api:app --host 0.0.0.0 --port 8000
 ```
+
+The backend now also serves `POST /v1/chat/completions` and `GET /v1/models` for the CLI (`server/coding_api.py`). It passes requests on to Ollama and keeps Ollama itself private.
+
+Manage user keys:
+
+```bash
+python -m server.coding_api new-key alice     # prints a key to give to alice
+python -m server.coding_api list
+python -m server.coding_api remove alice
+```
+
+- Keys are stored in `~/.fongai/server_keys.txt`. New keys work without restarting the server.
+- With **no keys** set, only the server machine itself (localhost) can connect.
+- Each reply is limited to `FONG_MAX_TOKENS` (default 4096) tokens.
+- Put HTTPS in front before going public (for example Caddy or nginx), so keys aren't sent in plain text.
 
 ---
 
@@ -92,11 +104,9 @@ Settings are read in this order, and the first one found wins:
 | API address | `--base-url` | `FONG_BASE_URL` | `http://localhost:11434/v1` |
 | API key | `--api-key` | `FONG_API_KEY` | (none) |
 
-The CLI works with any **OpenAI-compatible** API, not only Ollama. For example, a FongAI server on a GPU machine:
+`--base-url` and `--api-key` are saved to `~/.fongai/config.json` the first time you use them.
 
-```bash
-fong --base-url http://my-gpu-server:11434/v1 -m fongai
-```
+The CLI works with any **OpenAI-compatible** API. For a developer running everything on one machine, the default `http://localhost:11434/v1` talks straight to a local Ollama.
 
 ---
 
@@ -191,6 +201,7 @@ All of these come with Python, so nothing extra is installed.
 
 ## 7. Limits
 
-- A 7B local model is much weaker than large hosted models. Big, multi-file tasks may need several tries or clearer instructions. You can point `--base-url` at a stronger OpenAI-compatible model when you need one.
+- The server serves everyone from one model. With many users at once, Ollama queues the requests, so answers get slower.
+- A 7B model is much weaker than large hosted models. Big, multi-file tasks may need several tries or clearer instructions. You can point `--base-url` at a stronger OpenAI-compatible model when you need one.
 - The context is the model's `num_ctx` (8192 in the Modelfile). Very long sessions can lose early details. Use `/clear` between unrelated tasks.
 - `run_command` runs with your user's permissions. Keep the approval prompt on (no `-y`) in projects you care about.

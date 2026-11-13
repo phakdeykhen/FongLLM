@@ -13,6 +13,7 @@ dependencies = []   # standard library only, so it installs anywhere Python runs
 
 [project.scripts]
 fong = "fongai_cli.main:main"
+fongai = "fongai_cli.main:main"   # same command, for people who type the full name
 
 [tool.setuptools]
 packages = ["fongai_cli"]

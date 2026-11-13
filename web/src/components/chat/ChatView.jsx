@@ -98,17 +98,48 @@ export default function ChatView({ chat, busy, status, progress, onOpenImage, on
   const stick = useRef(true)   // follow new text only while the reader is at the bottom; scrolling up stops it
   const last = chat.messages[chat.messages.length - 1]
 
+  // Scroll only the chat area (.main). scrollIntoView also scrolled the whole page, which shifted the layout up.
+  const toBottom = () => {
+    const box = end.current?.closest('.main')
+    if (box) box.scrollTop = box.scrollHeight
+  }
+
   useEffect(() => {
     const box = end.current?.closest('.main')
     if (!box) return
-    const onScroll = () => { stick.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120 }
+    // Any move up by the reader stops following at once (a wheel or swipe up, keys); reaching the bottom again resumes.
+    const atBottom = () => box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    const onScroll = () => { if (atBottom()) stick.current = true }
+    const onWheel = (e) => { if (e.deltaY < 0) stick.current = false }
+    let touchY = 0
+    const onTouchStart = (e) => { touchY = e.touches[0]?.clientY ?? 0 }
+    const onTouchMove = (e) => { if ((e.touches[0]?.clientY ?? 0) > touchY) stick.current = false }
+    const onKey = (e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) stick.current = false }
+    const onPointerDown = (e) => { if (e.target === box) stick.current = false }   // grabbing the scrollbar
+    // pictures and cards load after the text: when the thread grows and the reader is following, stay at the bottom
+    const thread = end.current?.closest('.thread')
+    const grow = new ResizeObserver(() => { if (stick.current) box.scrollTop = box.scrollHeight })
+    if (thread) grow.observe(thread)
     box.addEventListener('scroll', onScroll, { passive: true })
-    return () => box.removeEventListener('scroll', onScroll)
+    box.addEventListener('wheel', onWheel, { passive: true })
+    box.addEventListener('touchstart', onTouchStart, { passive: true })
+    box.addEventListener('touchmove', onTouchMove, { passive: true })
+    box.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      grow.disconnect()
+      box.removeEventListener('scroll', onScroll)
+      box.removeEventListener('wheel', onWheel)
+      box.removeEventListener('touchstart', onTouchStart)
+      box.removeEventListener('touchmove', onTouchMove)
+      box.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
   }, [])
   // a new message (yours, or opening a chat): jump to the bottom and follow again
-  useEffect(() => { stick.current = true; end.current?.scrollIntoView({ block: 'end' }) }, [chat.id, chat.messages.length])
+  useEffect(() => { stick.current = true; toBottom() }, [chat.id, chat.messages.length])
   // streaming text / status / progress: follow only if the reader hasn't scrolled up
-  useEffect(() => { if (stick.current) end.current?.scrollIntoView({ block: 'end' }) },
+  useEffect(() => { if (stick.current) toBottom() },
     [last?.content, last?.media?.length, last?.files?.length, status, progress?.kind])
 
   return (

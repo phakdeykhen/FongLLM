@@ -56,7 +56,11 @@ def chat_stream(base_url, api_key, model, messages, tools, on_text, temperature=
                         slot["function"]["arguments"] += args or ""
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:500]
-        raise LLMError(f"HTTP {e.code} from {base_url}: {detail}") from None
+        try:
+            detail = json.loads(detail)["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            pass
+        raise LLMError(f"Error {e.code}: {detail}") from None
     except urllib.error.URLError as e:
         raise LLMError(f"Cannot reach {base_url} ({e.reason}). Is the model server running?") from None
     tool_calls = [calls[k] for k in sorted(calls)]

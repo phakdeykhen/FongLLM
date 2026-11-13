@@ -600,3 +600,38 @@ img.avatar { object-fit: cover; }
   :root:not([data-theme="light"]) .gcard-app.calendar { color: #8ab4f8; }
   :root:not([data-theme="light"]) .gcard-app.maps { color: #81c995; }
 }
+
+/* Sign in / Sign up tabs in the login window */
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 999px; background: var(--page); border: 1px solid var(--line); }
+.auth-tabs button { all: unset; cursor: pointer; padding: 8px; border-radius: 999px; font-weight: 600; font-size: .9rem; color: var(--muted); text-align: center; }
+.auth-tabs button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(15, 40, 90, .12); }
+.auth-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Phone + code login (Kimi-style layout) */
+.auth-form { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.auth-field { box-sizing: border-box; width: 100%; display: flex; align-items: center; background: var(--page); border: 1px solid var(--line); border-radius: 14px; }
+.auth-field input { all: unset; box-sizing: border-box; flex: 1; min-width: 0; padding: 13px 16px; font-size: .95rem; color: var(--text); }
+input.auth-field { display: block; padding: 13px 16px; font: inherit; font-size: .95rem; color: var(--text); outline: none; }
+.auth-field:focus-within, input.auth-field:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(31, 92, 255, .12); }
+.phone-field select { all: unset; cursor: pointer; padding: 13px 12px 13px 16px; font-size: .95rem; color: var(--text); border-right: 1px solid var(--line);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 118px; flex: none; }
+.send-code { all: unset; cursor: pointer; padding: 0 16px; font-size: .88rem; font-weight: 600; color: var(--accent); border-left: 1px solid var(--line); white-space: nowrap; align-self: stretch; display: flex; align-items: center; }
+.send-code:disabled { color: var(--muted); cursor: default; }
+.send-code:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 0 14px 14px 0; }
+.auth-form .login-btn { margin-top: 4px; border-radius: 14px; }
+.test-code { margin: -4px 0 0; color: var(--accent); }
+.auth-links { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: .88rem; color: var(--muted); }
+.agree { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: .8rem; color: var(--muted); cursor: pointer; }
+.agree input { width: 15px; height: 15px; accent-color: var(--accent); }
+
+/* /cli-login: connect the terminal (fong login) */
+.cli-login { min-height: 100%; display: grid; place-items: center; padding: 40px 16px; }
+.cli-card { width: min(460px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+  padding: 34px 32px 26px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.cli-card h1 { margin: 0; font-size: 1.5rem; }
+.cli-icon { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #3b8bff, #8b5cf6); }
+.cli-lead { margin: 0; color: var(--muted); }
+.cli-code { font-family: ui-monospace, Menlo, monospace; font-size: 2rem; font-weight: 700; letter-spacing: .14em; padding: 10px 22px;
+  border-radius: 14px; background: var(--page); border: 1px dashed var(--accent); color: var(--text); }
+.cli-who { margin: 4px 0 0; font-size: .92rem; }
+.cli-ok { display: inline-flex; align-items: center; gap: 6px; color: #138a52; font-weight: 600; }

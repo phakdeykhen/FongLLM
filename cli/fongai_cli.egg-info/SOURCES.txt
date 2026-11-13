@@ -1,5 +1,7 @@
+README.md
 pyproject.toml
 fongai_cli/__init__.py
+fongai_cli/account.py
 fongai_cli/llm.py
 fongai_cli/main.py
 fongai_cli/tools.py

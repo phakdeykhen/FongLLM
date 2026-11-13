@@ -71,3 +71,15 @@ export function makeImage(prompt, hd = false) {
   return fetch('/api/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, hd }) }).then(json)
 }
 
+
+// Accounts: sign up / sign in return {user, token}; the token goes in the Authorization header.
+const postJson = (url, body, token) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+  body: JSON.stringify(body || {}) }).then(json)
+export const signUp = (name, email, password) => postJson('/api/auth/signup', { name, email, password })
+export const signIn = (email, password) => postJson('/api/auth/login', { email, password })
+export const authLogout = (token) => postJson('/api/auth/logout', {}, token).catch(() => {})
+export const authMe = (token) => fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(json)
+export const phoneSend = (phone) => postJson('/api/auth/phone/send', { phone })
+export const phoneVerify = (phone, code) => postJson('/api/auth/phone/verify', { phone, code })
+export const approveCli = (token, userCode) => postJson('/api/auth/device/approve', { user_code: userCode }, token)
+export const makeTitle = (text, reply = '') => postJson('/api/title', { text, reply }).then((r) => r.title)

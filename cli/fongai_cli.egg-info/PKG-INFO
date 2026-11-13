@@ -5,3 +5,211 @@ Summary: Fong AI in your terminal: ask in plain words, it reads, writes and runs
 License: Apache-2.0
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
+
+# Fong AI CLI (`fong`)
+
+A coding assistant that runs in your terminal. You type what you want in plain words. Fong AI reads your code, edits files, runs commands and tests, and then tells you what it changed.
+
+It works on **macOS, Linux and Windows**. It needs only Python 3.9 or newer and uses no third-party packages.
+
+---
+
+## 1. Install (users)
+
+Users install only the CLI. The model runs on the Fong AI server, so they don't need Ollama, a GPU or a large download.
+
+```bash
+pip install pipx
+pipx install ./cli          # after publishing: pipx install fongai-cli
+```
+
+Sign in once with your FongAI account. The browser opens; sign in with Google and click **Connect**:
+
+```bash
+fong login --base-url https://YOUR-FONG-SERVER/v1   # on the server's own computer: just  fong login
+fong whoami                                          # which account this terminal uses
+fong logout                                          # end this terminal's session
+```
+
+No API key to copy: the terminal gets its own session from your account (30 days). Admin keys (below) still work for scripts.
+
+After that, just type `fong`.
+
+## 1b. Run the server (admin)
+
+On the server machine, start Ollama with the `fongai` model and the FongAI backend:
+
+```bash
+cd finetune && ollama create fongai -f Modelfile && cd ..
+source .venv/bin/activate
+uvicorn server.api:app --host 0.0.0.0 --port 8000
+```
+
+The backend now also serves `POST /v1/chat/completions` and `GET /v1/models` for the CLI (`server/coding_api.py`). It passes requests on to Ollama and keeps Ollama itself private.
+
+Manage user keys:
+
+```bash
+python -m server.coding_api new-key alice     # prints a key to give to alice
+python -m server.coding_api list
+python -m server.coding_api remove alice
+```
+
+- Keys are stored in `~/.fongai/server_keys.txt`. New keys work without restarting the server.
+- With **no keys** set, only the server machine itself (localhost) can connect.
+- Each reply is limited to `FONG_MAX_TOKENS` (default 4096) tokens.
+- Put HTTPS in front before going public (for example Caddy or nginx), so keys aren't sent in plain text.
+
+---
+
+## 2. Use
+
+```bash
+cd my-project
+fong                                    # start a chat in this folder
+fong "add a /health endpoint and test it"   # do one task, then exit
+fong -y "fix the failing tests"          # don't ask before each edit or command
+fong -m mistral                          # use another model
+```
+
+Before Fong AI writes a file or runs a command, it shows you the diff or the command and asks:
+
+```
+edit app.py
+@@ -3,2 +3,2 @@
+-x = 1
++x = 2
+Allow? [y]es / [n]o / [a]lways this session:
+```
+
+### Chat commands
+
+| Command | What it does |
+|---|---|
+| `/help` | Show the commands |
+| `/model [name]` | Show or change the model (saved) |
+| `/url [address]` | Show or change the API address (saved) |
+| `/yes` | Stop asking before edits and commands |
+| `/clear` | Start a new conversation |
+| `/exit` | Quit (or press Ctrl+D) |
+
+Press **Ctrl+C** while it is working to stop the current task without quitting.
+
+### Project instructions
+
+If the project folder has a `FONG.md` file (or `AGENTS.md` / `CLAUDE.md`), Fong AI reads it at the start. Put your project's rules there, for example "use tabs" or "run tests with `npm test`".
+
+---
+
+## 3. Settings
+
+Settings are read in this order, and the first one found wins:
+**command-line flag → environment variable → `~/.fongai/config.json` → default**
+
+| Setting | Flag | Environment variable | Default |
+|---|---|---|---|
+| Model | `-m`, `--model` | `FONG_MODEL` | `fongai` |
+| API address | `--base-url` | `FONG_BASE_URL` | `http://localhost:11434/v1` |
+| API key | `--api-key` | `FONG_API_KEY` | (none) |
+
+`--base-url` and `--api-key` are saved to `~/.fongai/config.json` the first time you use them.
+
+The CLI works with any **OpenAI-compatible** API. For a developer running everything on one machine, the default `http://localhost:11434/v1` talks straight to a local Ollama.
+
+---
+
+## 4. How it works
+
+```
+ you type a task
+       │
+       ▼
+ main.py  Session.run()  ──► llm.py chat_stream() ──► model (Ollama / any OpenAI API)
+       ▲                                                  │
+       │                     text answer ◄────────────────┤
+       │                     or tool calls ◄──────────────┘
+       │                           │
+       │                 ask permission (edits, commands)
+       │                           │
+       └──── tool results ◄── tools.py call()
+```
+
+1. Your message is added to the conversation, together with a system prompt that names the project folder, the OS, and the working rules.
+2. The model streams back either an answer, which ends the turn, or **tool calls**.
+3. Each tool call is run, after asking you first if it changes something. Its result goes back to the model.
+4. Steps 2 and 3 repeat until the model gives an answer, up to 40 steps per task.
+
+---
+
+## 5. Files and main functions
+
+```
+cli/
+├── pyproject.toml          package info; makes the `fong` command
+└── fongai_cli/
+    ├── __init__.py         version number
+    ├── main.py             command line, chat loop, permissions, settings
+    ├── llm.py              talks to the model API (streaming + tool calls)
+    └── tools.py            what the model can do: read, write, edit, search, run
+```
+
+### `main.py`
+
+| Function / class | What it does |
+|---|---|
+| `main()` | Entry point for `fong`. Reads the flags, then either runs one task or starts the chat. |
+| `load_config(args)` / `save_config(cfg)` | Combines the defaults, `~/.fongai/config.json`, environment variables and flags. Saves `/model` and `/url` changes. |
+| `system_prompt()` | Builds the model's instructions: project folder, OS, rules, plus `FONG.md` if the project has one. |
+| `Session.run(prompt)` | **The agent loop.** Sends the conversation to the model, runs the tool calls it returns, sends back the results, and repeats until the model answers. |
+| `Session.allowed(name, args)` | Shows the diff or command and asks *Allow? y/n/a* before `write_file`, `edit_file` and `run_command`. |
+| `calls_from_text(text)` | Backup for local models that write `<tool_call>{...}</tool_call>` as plain text instead of using the API's tool-call field. |
+| `repl(session)` | The interactive prompt (`›`) and the `/` commands. |
+
+### `llm.py`
+
+| Function | What it does |
+|---|---|
+| `chat_stream(base_url, api_key, model, messages, tools, on_text)` | Sends one request to `POST {base_url}/chat/completions` with `stream: true`. Prints the answer as it arrives and joins the tool-call pieces, which come in small chunks, into whole calls. Returns `(text, tool_calls)`. Raises `LLMError` with a clear message if the server is down or returns an error. |
+
+### `tools.py`
+
+These are the tools the model can call. `SCHEMAS` describes them to the model, and `call(name, args)` runs one and turns any error into text, so the model can recover.
+
+| Tool | Asks first? | What it does |
+|---|---|---|
+| `read_file(path, offset, limit)` | no | Returns a file with line numbers |
+| `list_files(path, pattern)` | no | Lists files and skips `.git`, `node_modules`, `.venv`, … |
+| `search(pattern, path, glob)` | no | Regex search over file contents, like grep. Stops at 300 matches. |
+| `write_file(path, content)` | **yes** | Creates or replaces a file and makes any missing folders |
+| `edit_file(path, old_text, new_text)` | **yes** | Replaces one exact piece of text. Fails safely if it is missing or appears more than once. |
+| `run_command(command, timeout)` | **yes** | Runs a command in the system shell (zsh/bash, or cmd on Windows). Returns the exit code and output. |
+
+Helpers: `preview()` makes the diff you see before you approve, `_walk()` walks the folders and skips large ones, and `_clip()` cuts long output to 20,000 characters so it fits in the model's context.
+
+---
+
+## 6. Libraries used
+
+All of these come with Python, so nothing extra is installed.
+
+| Library | Used for |
+|---|---|
+| `urllib.request` | HTTP calls to the model API, with streaming (Server-Sent Events) |
+| `json` | Request and response bodies, and tool arguments |
+| `argparse` | Command-line flags |
+| `subprocess` | `run_command`: running shell commands with a timeout |
+| `os`, `fnmatch`, `re` | Walking folders, glob filters, regex search |
+| `difflib` | The diff shown before an edit |
+| `platform` | Tells the model which OS it is on |
+| `readline` (optional) | Arrow keys and history in the chat on macOS/Linux |
+
+**Model side:** `fongai`, a Qwen2.5-7B fine-tune (`finetune/Modelfile`), served by **Ollama** through its OpenAI-compatible `/v1` API. It supports tool calling natively.
+
+---
+
+## 7. Limits
+
+- The server serves everyone from one model. With many users at once, Ollama queues the requests, so answers get slower.
+- A 7B model is much weaker than large hosted models. Big, multi-file tasks may need several tries or clearer instructions. You can point `--base-url` at a stronger OpenAI-compatible model when you need one.
+- The context is the model's `num_ctx` (8192 in the Modelfile). Very long sessions can lose early details. Use `/clear` between unrelated tasks.
+- `run_command` runs with your user's permissions. Keep the approval prompt on (no `-y`) in projects you care about.
