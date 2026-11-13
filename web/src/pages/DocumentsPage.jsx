@@ -18,9 +18,9 @@ export default function DocumentsPage({ docs, setDocs, settings, setSettings }) 
       <p className="muted">Answers use these files as context. You can also drop files on the message box.</p>
       <button className="drop" onClick={() => file.current.click()}
         onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(e.dataTransfer.files) }}>
-        <Icon name="file" size={22} /> {busy ? 'Indexing…' : 'Add .txt or .md files'}
+        <Icon name="file" size={22} /> {busy ? 'Indexing…' : 'Add Word, Excel, PowerPoint, PDF or text files'}
       </button>
-      <input ref={file} type="file" multiple hidden accept=".txt,.md" onChange={(e) => { add(e.target.files); e.target.value = '' }} />
+      <input ref={file} type="file" multiple hidden accept=".txt,.md,.csv,.json,.html,.docx,.xlsx,.xlsm,.pptx,.pdf" onChange={(e) => { add(e.target.files); e.target.value = '' }} />
       {err && <p className="msg-error">{err}</p>}
       <div className="list">
         {docs.documents.map((d) => (

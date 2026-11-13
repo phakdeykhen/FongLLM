@@ -1297,12 +1297,58 @@ def list_documents():
     return {"documents": STORE.documents(), "passages": STORE.passages()}
 
 
+DOC_EXTS = (".txt", ".md", ".csv", ".json", ".html", ".docx", ".xlsx", ".xlsm", ".pptx", ".pdf")
+
+
+def doc_text(name: str, data: bytes) -> str:
+    """Plain text from an uploaded document (Word, Excel, PowerPoint, PDF or text)."""
+    import io
+    ext = os.path.splitext(name.lower())[1]
+    buf = io.BytesIO(data)
+    if ext == ".docx":
+        import docx
+        d = docx.Document(buf)
+        parts = [p.text for p in d.paragraphs if p.text.strip()]
+        for t in d.tables:
+            parts += [" | ".join(c.text.strip() for c in row.cells) for row in t.rows]
+        return "\n".join(parts)
+    if ext in (".xlsx", ".xlsm"):
+        import openpyxl
+        wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
+        parts = []
+        for ws in wb.worksheets:
+            parts.append(f"# Sheet: {ws.title}")
+            for row in ws.iter_rows(values_only=True):
+                if any(v is not None for v in row):
+                    parts.append(" | ".join("" if v is None else str(v) for v in row))
+        return "\n".join(parts)
+    if ext == ".pptx":
+        import pptx
+        parts = []
+        for i, slide in enumerate(pptx.Presentation(buf).slides, 1):
+            parts.append(f"# Slide {i}")
+            parts += [sh.text_frame.text for sh in slide.shapes if sh.has_text_frame and sh.text_frame.text.strip()]
+        return "\n".join(parts)
+    if ext == ".pdf":
+        import pypdf
+        return "\n".join(p.extract_text() or "" for p in pypdf.PdfReader(buf).pages)
+    return data.decode("utf-8", errors="ignore")
+
+
 @app.post("/api/documents")
 async def add_documents(files: list[UploadFile] = File(...)):
     for f in files:
-        if not f.filename.lower().endswith((".txt", ".md")):
-            raise HTTPException(400, f"{f.filename}: only .txt and .md files are supported")
-    texts = [(f.filename, (await f.read()).decode("utf-8", errors="ignore")) for f in files]
+        if not f.filename.lower().endswith(DOC_EXTS):
+            raise HTTPException(400, f"{f.filename}: supported files are Word, Excel, PowerPoint, PDF, CSV, .txt and .md")
+    texts = []
+    for f in files:
+        try:
+            text = doc_text(f.filename, await f.read())
+        except Exception as e:
+            raise HTTPException(400, f"{f.filename}: couldn't read it ({e})")
+        if not text.strip():
+            raise HTTPException(400, f"{f.filename}: no text found (a scanned PDF needs OCR)")
+        texts.append((f.filename, text))
     with GPU_LOCK:   # only the new documents are embedded; the rest are already on disk
         for name, text in texts:
             STORE.add(name, text)

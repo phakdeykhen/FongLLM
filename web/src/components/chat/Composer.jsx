@@ -4,7 +4,7 @@ import { transcribe, uploadDocuments } from '@/api/client.js'
 import { startRecording } from '@/lib/recorder.js'
 
 const AUDIO = /\.(wav|flac|mp3|ogg|m4a)$/i
-const DOC = /\.(txt|md)$/i
+const DOC = /\.(txt|md|csv|json|html|docx|xlsx|xlsm|pptx|pdf)$/i
 const IMAGE = /\.(png|jpe?g|webp|gif|heic|bmp)$/i
 
 // Shrink a photo to at most 1024px JPEG: plenty for the vision model, and small enough to keep in saved chats.
@@ -95,7 +95,7 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
         setText((old) => (old ? old + ' ' : '') + t)
         setNote('')
       }
-      if (!docs.length && !audio && !images.length) setNote('Attach photos, .txt or .md documents, or an audio file.')
+      if (!docs.length && !audio && !images.length) setNote('Attach photos, documents (Word, Excel, PowerPoint, PDF, CSV, .txt, .md) or an audio file.')
     } catch (e) {
       setNote(e.message)
     }
@@ -154,7 +154,7 @@ export default function Composer({ big, busy, onSend, onStop, models, model, onM
         <button className="icon-btn" title="Attach photos, documents or audio" aria-label="Attach files" onClick={() => file.current.click()}>
           <Icon name="plus" size={20} />
         </button>
-        <input ref={file} type="file" multiple hidden accept="image/*,.txt,.md,.wav,.flac,.mp3,.ogg,.m4a"
+        <input ref={file} type="file" multiple hidden accept="image/*,.txt,.md,.csv,.json,.html,.docx,.xlsx,.xlsm,.pptx,.pdf,.wav,.flac,.mp3,.ogg,.m4a"
           onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
         {note && <span className="composer-note">{note}</span>}
         <div className="grow" />
